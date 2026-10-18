@@ -27,6 +27,16 @@
 * **Cause of 1.6V Reading:** When signals were split across Channel 1 and Channel 2, the signal path was open-circuited inside the chip, leaving the unused output floating at half-supply (~1.6V).
 * **Solution:** Wire strictly to **Channel 1**.
 
+### D. RJ45 Pin 4 (Blue Wire) Power Analysis
+* **Multimeter Measurement:** The user measured **`+3.85V DC`** on the **Blue wire (Pin 4)** relative to Brown (GND).
+* **Crucial Decision:** Pin 4 is **NOT a 12V aux power rail**; it is an internal unbuffered logic rail. The LM2596 buck converter cannot run on 3.85V (requires $\ge 7\text{V}$ to output 5.0V), and attempting to draw 200mA from it risks pulling down the inverter's internal CPU.
+* **Power Architecture:** Power the ESP32 safely via standard **5.0V USB-C** / phone adapter.
+* **Cable Requirement:** Only **3 wires** are needed from the inverter:
+  1. Pin 1 (Orange-White) = Inverter TXD ($-13.62\text{V}$)
+  2. Pin 2 (Orange) = Inverter RXD
+  3. Pin 8 (Brown) = Ground (GND)
+  *(All other wires: Blue, Green, etc. are taped off).*
+
 ---
 
 ## 2. Final Hardware Wiring Specification (Channel 1)
