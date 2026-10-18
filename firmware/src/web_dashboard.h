@@ -248,6 +248,7 @@ const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
 
   /* Serial Diagnostics Panel */
   .diag-card {
+    display: none;
     background: #0f172a;
     border: 1px solid rgba(255,255,255,0.1);
     border-radius: 14px;
@@ -586,6 +587,40 @@ const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
     <input type="password" id="wifiPass" placeholder="Wi-Fi Password">
     <button class="btn-save" style="width:100%; margin-top:4px;" onclick="saveWifiCredentials()">Save & Connect Wi-Fi</button>
 
+    <!-- ThingsBoard Cloud Integration Section -->
+    <div class="section-divider"></div>
+    <div class="section-title" style="display:flex; justify-content:space-between; align-items:center;">
+      <span>ThingsBoard Cloud History</span>
+      <span id="tbStatusPill" style="font-size:0.65rem; padding:2px 6px; border-radius:4px; background:#e2e8f0; color:#475569;">Disabled</span>
+    </div>
+    
+    <div style="margin-top:6px; display:flex; align-items:center; gap:8px;">
+      <input type="checkbox" id="tbEnabled" style="width:16px; height:16px; margin:0;">
+      <label for="tbEnabled" style="font-size:0.75rem; font-weight:600; color:#1e293b; cursor:pointer;">Enable ThingsBoard Cloud Logging</label>
+    </div>
+
+    <div style="margin-top:6px;">
+      <label style="font-size:0.72rem; color:#475569;">Server URL:</label>
+      <input type="text" id="tbServer" placeholder="https://thingsboard.cloud" value="https://thingsboard.cloud">
+    </div>
+
+    <div style="margin-top:4px;">
+      <label style="font-size:0.72rem; color:#475569;">Device Access Token:</label>
+      <input type="text" id="tbToken" placeholder="Paste ThingsBoard Device Token">
+    </div>
+
+    <div style="margin-top:4px; display:flex; justify-content:space-between; align-items:center;">
+      <label style="font-size:0.72rem; color:#475569;">Averaging Interval:</label>
+      <select id="tbInterval" style="width:160px; padding:6px; font-size:0.75rem;">
+        <option value="10" selected>10s (~3 samples avg)</option>
+        <option value="15">15s (~5 samples avg)</option>
+        <option value="30">30s (~10 samples avg)</option>
+        <option value="60">60s (~20 samples avg)</option>
+      </select>
+    </div>
+
+    <button class="btn-save" style="background:#2563eb; width:100%; margin-top:8px;" onclick="saveTbConfig()">💾 Save ThingsBoard Settings</button>
+
     <!-- GitHub Wireless OTA Section -->
     <div class="section-divider"></div>
     <div class="section-title">Wireless Firmware Update (OTA)</div>
@@ -712,6 +747,11 @@ async function refreshData() {
       document.getElementById('diagPinBadge').textContent = (d.pins_swapped ? '🔀 ' : '') + 'RX:' + d.rx_pin + ' TX:' + d.tx_pin;
     }
 
+    // ThingsBoard Status
+    if (d.tb_enabled !== undefined) {
+      updateTbStatus(d.tb_enabled, d.tb_status);
+    }
+
   } catch(e) {
     const connBadge = document.getElementById('invConnBadge');
     if (connBadge) {
@@ -752,9 +792,68 @@ async function sendManualCmd(cmd) {
   } catch(e) {}
 }
 
+function updateTbStatus(enabled, status) {
+  const pill = document.getElementById('tbStatusPill');
+  if (!pill) return;
+  if (!enabled) {
+    pill.style.background = '#e2e8f0';
+    pill.style.color = '#475569';
+    pill.textContent = 'Disabled';
+  } else {
+    pill.style.background = '#dcfce7';
+    pill.style.color = '#15803d';
+    pill.textContent = status || 'Active';
+  }
+}
+
+async function loadTbConfig() {
+  try {
+    const res = await fetch('/api/tb_config');
+    if (res.ok) {
+      const d = await res.json();
+      document.getElementById('tbEnabled').checked = !!d.enabled;
+      if (d.server) document.getElementById('tbServer').value = d.server;
+      if (d.token) document.getElementById('tbToken').value = d.token;
+      if (d.interval) document.getElementById('tbInterval').value = String(d.interval);
+      updateTbStatus(d.enabled, d.last_status);
+    }
+  } catch(e) {}
+}
+
+async function saveTbConfig() {
+  const enabled = document.getElementById('tbEnabled').checked;
+  const server = document.getElementById('tbServer').value.trim();
+  const token = document.getElementById('tbToken').value.trim();
+  const interval = document.getElementById('tbInterval').value;
+  
+  const msg = document.getElementById('modalMsg');
+  msg.style.color = '#2563eb';
+  msg.textContent = 'Saving ThingsBoard configuration...';
+
+  try {
+    const res = await fetch('/api/tb_config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: `enabled=${enabled}&server=${encodeURIComponent(server)}&token=${encodeURIComponent(token)}&interval=${interval}`
+    });
+    if (res.ok) {
+      msg.style.color = '#10b981';
+      msg.textContent = '✅ ThingsBoard settings saved!';
+      updateTbStatus(enabled, enabled ? 'Enabled' : 'Disabled');
+    } else {
+      msg.style.color = '#ef4444';
+      msg.textContent = 'Failed to save ThingsBoard settings.';
+    }
+  } catch(e) {
+    msg.style.color = '#ef4444';
+    msg.textContent = 'Network error saving settings.';
+  }
+}
+
 function openWifiModal() {
   document.getElementById('wifiModal').classList.add('active');
   scanWifiNetworks();
+  loadTbConfig();
 }
 
 function closeWifiModal() {

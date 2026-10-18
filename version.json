@@ -1,5 +1,5 @@
 {
-  "version": "1.0.2",
+  "version": "1.0.3",
   "bin_url": "https://raw.githubusercontent.com/prasadmanjulago/Next-inverter-wifi/main/firmware.bin",
-  "notes": "v1.0.2: Live Serial Diagnostics & Raw Hex/ASCII display, Auto-Baud (2400/9600), Software RX/TX Pin Swap"
+  "notes": "v1.0.3: ThingsBoard Cloud Integration with multi-sample interval averaging (10s/15s/30s/60s), Clean UI"
 }

@@ -10,7 +10,7 @@
 #include "inverter_protocol.h"
 #include "web_dashboard.h"
 
-#define FIRMWARE_VERSION "1.0.2"
+#define FIRMWARE_VERSION "1.0.3"
 
 // Hardware Serial 2 Pins for Inverter RS-232
 #define INVERTER_RX_PIN 16
@@ -27,8 +27,17 @@ const char *AP_SSID = "NextInverter-WIFI";
 
 // Inverter Protocol & State
 InverterTelemetry telemetry;
+InverterAccumulator tbAccumulator;
 WebServer server(80);
 Preferences preferences;
+
+// ThingsBoard Cloud Telemetry State
+bool tbEnabled = false;
+String tbServer = "https://thingsboard.cloud";
+String tbToken = "";
+int tbInterval = 10; // Default 10 seconds (~3 samples averaged)
+String tbLastStatus = "Ready";
+unsigned long lastTbSendTime = 0;
 
 void initSerial2(int baud, int rxPin, int txPin) {
     Serial2.end();
@@ -253,6 +262,11 @@ void handleTelemetryApi() {
     json += "\"latest_version\":\"" + latestVersion + "\",";
     json += "\"github_repo\":\"" + githubRepo + "\",";
 
+    // ThingsBoard Status
+    json += "\"tb_enabled\":" + String(tbEnabled ? "true" : "false") + ",";
+    json += "\"tb_interval\":" + String(tbInterval) + ",";
+    json += "\"tb_status\":\"" + tbLastStatus + "\",";
+
     // Serial Diagnostics
     json += "\"last_tx_cmd\":\"" + telemetry.last_tx_cmd + "\",";
     String escapedRaw = telemetry.last_rx_raw;
@@ -381,6 +395,7 @@ void pollInverter() {
     if (qpigsResp.length() > 0 && qpigsResp.indexOf('(') >= 0) {
         Serial.printf("[Inverter RX QPIGS] %s\n", qpigsResp.c_str());
         VoltronicProtocol::parseQPIGS(qpigsResp, telemetry);
+        tbAccumulator.add(telemetry); // Accumulate sample for ThingsBoard interval averaging
         autoBaudEnabled = false; // Lock in working baud rate!
     } else {
         if (millis() - telemetry.last_update > 8000) {
@@ -395,6 +410,131 @@ void pollInverter() {
         }
     }
 }
+
+void sendThingsBoardTelemetry() {
+    if (!tbEnabled || tbToken.length() == 0 || WiFi.status() != WL_CONNECTED) return;
+    if (tbAccumulator.count == 0) return;
+
+    int n = tbAccumulator.count;
+    float avgGridV = tbAccumulator.sum_grid_voltage / n;
+    float avgGridHz = tbAccumulator.sum_grid_frequency / n;
+    float avgAcOutV = tbAccumulator.sum_ac_output_voltage / n;
+    float avgAcOutHz = tbAccumulator.sum_ac_output_frequency / n;
+    int avgAcOutVA = round(tbAccumulator.sum_ac_output_va / n);
+    int avgAcOutW = round(tbAccumulator.sum_ac_output_watts / n);
+    int avgLoadPct = round(tbAccumulator.sum_load_percent / n);
+    float avgBatV = tbAccumulator.sum_battery_voltage / n;
+    int avgBatChgA = round(tbAccumulator.sum_battery_charge_current / n);
+    int avgBatDisA = round(tbAccumulator.sum_battery_discharge_current / n);
+    int avgBatSoc = round(tbAccumulator.sum_battery_soc / n);
+    float avgTemp = tbAccumulator.sum_heatsink_temp / n;
+    float avgPvV = tbAccumulator.sum_pv_voltage / n;
+    float avgPvA = tbAccumulator.sum_pv_current / n;
+    float avgPvW = tbAccumulator.sum_pv_watts / n;
+
+    // Reset accumulator for next interval
+    tbAccumulator.reset();
+
+    String payload = "{";
+    payload += "\"grid_voltage\":" + String(avgGridV, 1) + ",";
+    payload += "\"grid_frequency\":" + String(avgGridHz, 1) + ",";
+    payload += "\"ac_output_voltage\":" + String(avgAcOutV, 1) + ",";
+    payload += "\"ac_output_frequency\":" + String(avgAcOutHz, 1) + ",";
+    payload += "\"ac_output_va\":" + String(avgAcOutVA) + ",";
+    payload += "\"ac_output_watts\":" + String(avgAcOutW) + ",";
+    payload += "\"load_percent\":" + String(avgLoadPct) + ",";
+    payload += "\"battery_voltage\":" + String(avgBatV, 1) + ",";
+    payload += "\"battery_soc\":" + String(avgBatSoc) + ",";
+    payload += "\"battery_charge_current\":" + String(avgBatChgA) + ",";
+    payload += "\"battery_discharge_current\":" + String(avgBatDisA) + ",";
+    payload += "\"pv_voltage\":" + String(avgPvV, 1) + ",";
+    payload += "\"pv_current\":" + String(avgPvA, 1) + ",";
+    payload += "\"pv_watts\":" + String(avgPvW, 1) + ",";
+    payload += "\"heatsink_temp\":" + String(avgTemp, 1) + ",";
+    payload += "\"mode\":\"" + telemetry.mode_string + "\",";
+    payload += "\"solar_charging\":" + String(telemetry.solar_charging ? "true" : "false") + ",";
+    payload += "\"grid_charging\":" + String(telemetry.grid_charging ? "true" : "false") + ",";
+    payload += "\"samples_averaged\":" + String(n);
+    payload += "}";
+
+    String url = tbServer;
+    url.trim();
+    if (!url.startsWith("http://") && !url.startsWith("https://")) {
+        url = "https://" + url;
+    }
+    if (!url.endsWith("/")) url += "/";
+    url += "api/v1/" + tbToken + "/telemetry";
+
+    HTTPClient http;
+    bool beginOk = false;
+    WiFiClientSecure secClient;
+    WiFiClient plainClient;
+
+    if (url.startsWith("https://")) {
+        secClient.setInsecure();
+        beginOk = http.begin(secClient, url);
+    } else {
+        beginOk = http.begin(plainClient, url);
+    }
+
+    if (beginOk) {
+        http.addHeader("Content-Type", "application/json");
+        http.setTimeout(4000);
+        int httpCode = http.POST(payload);
+        if (httpCode == HTTP_CODE_OK || httpCode == 200) {
+            tbLastStatus = "Sent OK (" + String(n) + " avg)";
+            Serial.printf("[ThingsBoard] Sent averaged telemetry (%d samples) -> HTTP 200 OK\n", n);
+        } else {
+            tbLastStatus = "HTTP " + String(httpCode);
+            Serial.printf("[ThingsBoard] HTTP Response: %d\n", httpCode);
+        }
+        http.end();
+    } else {
+        tbLastStatus = "Conn Failed";
+        Serial.println("[ThingsBoard] Failed to begin HTTP connection");
+    }
+}
+
+void handleTbConfigGet() {
+    String json = "{";
+    json += "\"enabled\":" + String(tbEnabled ? "true" : "false") + ",";
+    json += "\"server\":\"" + tbServer + "\",";
+    json += "\"token\":\"" + tbToken + "\",";
+    json += "\"interval\":" + String(tbInterval) + ",";
+    json += "\"last_status\":\"" + tbLastStatus + "\"";
+    json += "}";
+    server.send(200, "application/json", json);
+}
+
+void handleTbConfigPost() {
+    if (server.hasArg("enabled")) tbEnabled = (server.arg("enabled") == "true" || server.arg("enabled") == "1");
+    if (server.hasArg("server")) {
+        tbServer = server.arg("server");
+        tbServer.trim();
+        if (tbServer.length() == 0) tbServer = "https://thingsboard.cloud";
+    }
+    if (server.hasArg("token")) {
+        tbToken = server.arg("token");
+        tbToken.trim();
+    }
+    if (server.hasArg("interval")) {
+        tbInterval = server.arg("interval").toInt();
+        if (tbInterval < 5) tbInterval = 10;
+    }
+
+    preferences.begin("tb", false);
+    preferences.putBool("enabled", tbEnabled);
+    preferences.putString("server", tbServer);
+    preferences.putString("token", tbToken);
+    preferences.putInt("interval", tbInterval);
+    preferences.end();
+
+    tbAccumulator.reset();
+    server.send(200, "text/plain", "ThingsBoard settings saved!");
+    Serial.printf("[ThingsBoard] Saved: Enabled=%s, Server=%s, Interval=%ds\n",
+                  tbEnabled ? "YES" : "NO", tbServer.c_str(), tbInterval);
+}
+
 
 void setup() {
     Serial.begin(115200);
@@ -416,6 +556,15 @@ void setup() {
     // Read stored GitHub repository
     preferences.begin("ota", true);
     githubRepo = preferences.getString("repo", "prasadmanjulago/Next-inverter-wifi");
+    preferences.end();
+
+    // Read stored ThingsBoard preferences
+    preferences.begin("tb", true);
+    tbEnabled = preferences.getBool("enabled", false);
+    tbServer = preferences.getString("server", "https://thingsboard.cloud");
+    tbToken = preferences.getString("token", "");
+    tbInterval = preferences.getInt("interval", 10);
+    if (tbInterval < 5) tbInterval = 10;
     preferences.end();
 
     bool connected = false;
@@ -466,6 +615,8 @@ void setup() {
     server.on("/api/set_baud", HTTP_POST, handleSetBaud);
     server.on("/api/swap_pins", HTTP_POST, handleSwapPins);
     server.on("/api/send_cmd", HTTP_POST, handleSendCmd);
+    server.on("/api/tb_config", HTTP_GET, handleTbConfigGet);
+    server.on("/api/tb_config", HTTP_POST, handleTbConfigPost);
 
     // Browser Direct Web OTA (/update)
     server.on("/update", HTTP_POST, []() {
@@ -503,6 +654,12 @@ void loop() {
     if (millis() - lastPollTime >= POLL_INTERVAL) {
         lastPollTime = millis();
         pollInverter();
+    }
+
+    // ThingsBoard Periodic Cloud Telemetry with Averaged Inverter Data
+    if (tbEnabled && millis() - lastTbSendTime >= (unsigned long)tbInterval * 1000) {
+        lastTbSendTime = millis();
+        sendThingsBoardTelemetry();
     }
 
     // Periodic OTA check every 1 hour

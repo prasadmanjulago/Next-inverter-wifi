@@ -158,3 +158,61 @@ public:
         }
     }
 };
+
+struct InverterAccumulator {
+    int count = 0;
+    double sum_grid_voltage = 0;
+    double sum_grid_frequency = 0;
+    double sum_ac_output_voltage = 0;
+    double sum_ac_output_frequency = 0;
+    double sum_ac_output_va = 0;
+    double sum_ac_output_watts = 0;
+    double sum_load_percent = 0;
+    double sum_battery_voltage = 0;
+    double sum_battery_charge_current = 0;
+    double sum_battery_discharge_current = 0;
+    double sum_battery_soc = 0;
+    double sum_heatsink_temp = 0;
+    double sum_pv_voltage = 0;
+    double sum_pv_current = 0;
+    double sum_pv_watts = 0;
+
+    void add(const InverterTelemetry &t) {
+        count++;
+        sum_grid_voltage += t.grid_voltage;
+        sum_grid_frequency += t.grid_frequency;
+        sum_ac_output_voltage += t.ac_output_voltage;
+        sum_ac_output_frequency += t.ac_output_frequency;
+        sum_ac_output_va += t.ac_output_va;
+        sum_ac_output_watts += t.ac_output_watts;
+        sum_load_percent += t.load_percent;
+        sum_battery_voltage += t.battery_voltage;
+        sum_battery_charge_current += t.battery_charge_current;
+        sum_battery_discharge_current += t.battery_discharge_current;
+        sum_battery_soc += t.battery_soc;
+        sum_heatsink_temp += t.heatsink_temp;
+        sum_pv_voltage += t.pv_voltage;
+        sum_pv_current += t.pv_current;
+        sum_pv_watts += t.pv_watts;
+    }
+
+    void reset() {
+        count = 0;
+        sum_grid_voltage = 0;
+        sum_grid_frequency = 0;
+        sum_ac_output_voltage = 0;
+        sum_ac_output_frequency = 0;
+        sum_ac_output_va = 0;
+        sum_ac_output_watts = 0;
+        sum_load_percent = 0;
+        sum_battery_voltage = 0;
+        sum_battery_charge_current = 0;
+        sum_battery_discharge_current = 0;
+        sum_battery_soc = 0;
+        sum_heatsink_temp = 0;
+        sum_pv_voltage = 0;
+        sum_pv_current = 0;
+        sum_pv_watts = 0;
+    }
+};
+
