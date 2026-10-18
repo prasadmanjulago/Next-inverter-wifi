@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SmartESS Style Solar Power Flow</title>
+<style>
+  :root {
+    --bg-top: #cfe4fc;
+    --bg-mid: #e9f2fd;
+    --bg-bot: #f8fafc;
+    --text-main: #1e293b;
+    --text-muted: #64748b;
+    --solar: #f59e0b;
+    --solar-line: #f59e0b;
+    --grid: #2563eb;
+    --battery: #10b981;
+    --load: #3b82f6;
+    --inverter: #f97316;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: #0f172a;
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 16px;
+  }
+  .app-frame {
+    width: 100%;
+    max-width: 420px;
+    background: linear-gradient(180deg, var(--bg-top) 0%, var(--bg-mid) 45%, var(--bg-bot) 100%);
+    border-radius: 28px;
+    box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5);
+    overflow: hidden;
+    position: relative;
+    padding: 24px 16px 20px 16px;
+  }
+
+  /* Top Bar */
+  .header-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+    padding: 0 8px;
+  }
+  .header-bar h2 {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--text-main);
+  }
+  .status-tag {
+    font-size: 0.72rem;
+    font-weight: 700;
+    background: rgba(16, 185, 129, 0.15);
+    color: #059669;
+    padding: 4px 10px;
+    border-radius: 999px;
+    border: 1px solid rgba(16, 185, 129, 0.3);
+  }
+
+  /* Center Schematic Stage */
+  .diagram-container {
+    position: relative;
+    width: 360px;
+    height: 400px;
+    margin: 0 auto;
+  }
+  .flow-svg {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    z-index: 1;
+    pointer-events: none;
+  }
+
+  /* Base Guide Lines (Dotted) */
+  .guide-path {
+    fill: none;
+    stroke-width: 2.5;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  /* Animated Moving Pulse Lines */
+  .active-pulse {
+    fill: none;
+    stroke-width: 3.5;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-dasharray: 6 14;
+    animation: pulseFlow 1s linear infinite;
+  }
+  @keyframes pulseFlow {
+    to { stroke-dashoffset: -20; }
+  }
+
+  /* Nodes */
+  .node {
+    position: absolute;
+    width: 120px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    transform: translate(-50%, -50%);
+    z-index: 2;
+  }
+  .node-icon-circle {
+    width: 68px; height: 68px;
+    border-radius: 50%;
+    background: #ffffff;
+    box-shadow: 0 8px 20px -4px rgba(0,0,0,0.1), 0 2px 6px -1px rgba(0,0,0,0.06);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    margin-bottom: 8px;
+    border: 2px solid;
+    transition: transform 0.2s;
+  }
+  .node-icon-circle:hover { transform: scale(1.05); }
+
+  /* Inverter Center Node */
+  .node-inv {
+    top: 50%; left: 50%;
+  }
+  .node-inv .node-icon-circle {
+    width: 82px; height: 82px;
+    border: 2.5px solid var(--inverter);
+    outline: 5px solid rgba(249, 115, 22, 0.15);
+  }
+
+  /* Specific Node Colors */
+  .node-solar { top: 18%; left: 22%; }
+  .node-solar .node-icon-circle { border-color: var(--solar); }
+
+  .node-grid { top: 18%; left: 78%; }
+  .node-grid .node-icon-circle { border-color: var(--grid); }
+
+  .node-bat { top: 76%; left: 22%; }
+  .node-bat .node-icon-circle { border-color: var(--battery); }
+
+  .node-load { top: 76%; left: 78%; }
+  .node-load .node-icon-circle { border-color: var(--load); }
+
+  /* Node Labels & Numbers */
+  .val-hero {
+    font-size: 1.25rem;
+    font-weight: 800;
+    color: var(--text-main);
+    line-height: 1.1;
+  }
+  .val-sub {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    font-weight: 500;
+    margin-top: 2px;
+  }
+  .val-caption {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    margin-top: 1px;
+  }
+  .help-icon {
+    display: inline-block;
+    width: 13px; height: 13px;
+    border-radius: 50%;
+    border: 1px solid #94a3b8;
+    color: #64748b;
+    font-size: 9px;
+    line-height: 12px;
+  }
+
+  /* Carousel Pagination Dots */
+  .carousel-dots {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 6px;
+    margin-top: 10px;
+    margin-bottom: 14px;
+  }
+  .dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: #cbd5e1;
+  }
+  .dot.active {
+    width: 22px;
+    border-radius: 999px;
+    background: #f97316;
+  }
+
+  /* Bottom Wi-Fi Status Bar */
+  .bottom-wifi {
+    background: #ffffff;
+    border-radius: 16px;
+    padding: 10px 14px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.78rem;
+  }
+  .wifi-indicator {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 600;
+    color: #334155;
+  }
+  .dot-green {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: #10b981;
+  }
+  .btn-connect {
+    background: #2563eb;
+    color: white;
+    border: none;
+    padding: 6px 12px;
+    border-radius: 8px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    cursor: pointer;
+  }
+</style>
+</head>
+<body>
+
+<div class="app-frame">
+  
+  <div class="header-bar">
+    <h2>NEXT 6.2kW Hybrid</h2>
+    <span class="status-tag">SBU • Working Normal</span>
+  </div>
+
+  <div class="diagram-container">
+    <svg class="flow-svg" viewBox="0 0 360 400">
+      <defs>
+        <!-- Arrowhead Marker for Solar -->
+        <marker id="arrow-solar" markerWidth="6" markerHeight="6" refX="4" refY="3" orient="auto">
+          <polygon points="0 1, 5 3, 0 5" fill="#f59e0b" />
+        </marker>
+        <!-- Arrowhead Marker for Battery -->
+        <marker id="arrow-bat" markerWidth="6" markerHeight="6" refX="4" refY="3" orient="auto">
+          <polygon points="0 1, 5 3, 0 5" fill="#10b981" />
+        </marker>
+        <!-- Arrowhead Marker for Home Load -->
+        <marker id="arrow-load" markerWidth="6" markerHeight="6" refX="4" refY="3" orient="auto">
+          <polygon points="0 1, 5 3, 0 5" fill="#3b82f6" />
+        </marker>
+      </defs>
+
+      <!-- 1. Path: Solar -> Inverter (Left Trunk x = 165) -->
+      <path class="guide-path" d="M 114 70 H 151 Q 165 70 165 84 V 155" stroke="#fcd34d" stroke-dasharray="3 3" />
+      <path class="active-pulse" d="M 114 70 H 151 Q 165 70 165 84 V 155" stroke="#f59e0b" />
+
+      <!-- 2. Path: Grid -> Inverter (Right Trunk x = 195, never overlaps!) -->
+      <path class="guide-path" d="M 246 70 H 209 Q 195 70 195 84 V 155" stroke="#cbd5e1" stroke-dasharray="3 3" />
+
+      <!-- 3. Path: Inverter -> Battery (Left Trunk x = 165) -->
+      <path class="guide-path" d="M 165 235 V 284 Q 165 298 151 298 H 114" stroke="#a7f3d0" stroke-dasharray="3 3" />
+      <path class="active-pulse" d="M 165 235 V 284 Q 165 298 151 298 H 114" stroke="#10b981" />
+
+      <!-- 4. Path: Inverter -> Home Load (Right Trunk x = 195, never overlaps!) -->
+      <path class="guide-path" d="M 195 235 V 284 Q 195 298 209 298 H 246" stroke="#bfdbfe" stroke-dasharray="3 3" />
+      <path class="active-pulse" d="M 195 235 V 284 Q 195 298 209 298 H 246" stroke="#3b82f6" />
+    </svg>
+
+    <!-- Node 1: Solar (Top Left) -->
+    <div class="node node-solar">
+      <div class="node-icon-circle">
+        <!-- SVG Solar Icon -->
+        <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/>
+        </svg>
+      </div>
+      <div class="val-hero" id="pvWatts">610<span style="font-size:0.9rem;">w</span></div>
+      <div class="val-sub" id="pvSub">150.7V • 4.04A</div>
+      <div class="val-caption">Solar <span class="help-icon">?</span></div>
+    </div>
+
+    <!-- Node 2: Grid (Top Right) -->
+    <div class="node node-grid">
+      <div class="node-icon-circle">
+        <!-- SVG Transmission Tower Icon -->
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M6 18h12"/><path d="M7 14h10"/><path d="M9 10h6"/><path d="m12 2 4 20"/><path d="m12 2-4 20"/><path d="M8 6h8"/><path d="m16 10-8 8"/><path d="m8 10 8 8"/>
+        </svg>
+      </div>
+      <div class="val-hero" id="gridWatts">0<span style="font-size:0.9rem;">w</span></div>
+      <div class="val-sub" id="gridSub">248.0V • 0.0A • 50Hz</div>
+      <div class="val-caption">Grid <span class="help-icon">?</span></div>
+    </div>
+
+    <!-- Node 3: Center Inverter -->
+    <div class="node node-inv">
+      <div class="node-icon-circle">
+        <!-- SVG Inverter Box with Dial -->
+        <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="#f97316" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect width="18" height="18" x="3" y="3" rx="4"/>
+          <line x1="8" x2="8" y1="9" y2="9.01"/>
+          <line x1="16" x2="16" y1="15" y2="15.01"/>
+          <path d="M8 15c2-2 6-2 8 0"/>
+          <path d="M8 9c2 2 6 2 8 0"/>
+        </svg>
+      </div>
+      <div style="font-size:0.75rem; font-weight:700; color:#c2410c; margin-top: -4px;">6.2 kW</div>
+      <div style="font-size:0.65rem; color:var(--text-muted);">38.2 °C</div>
+    </div>
+
+    <!-- Node 4: Battery (Bottom Left) -->
+    <div class="node node-bat">
+      <div class="node-icon-circle">
+        <!-- SVG Battery Icon -->
+        <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect width="16" height="10" x="2" y="7" rx="2" ry="2"/>
+          <line x1="22" x2="22" y1="11" y2="13"/>
+          <line x1="6" x2="6" y1="11" y2="13"/>
+          <line x1="10" x2="10" y1="11" y2="13"/>
+          <line x1="14" x2="14" y1="11" y2="13"/>
+        </svg>
+      </div>
+      <div class="val-hero" id="batHero">456<span style="font-size:0.85rem;">w</span> • 95<span style="font-size:0.85rem;">%</span></div>
+      <div class="val-sub" id="batSub">51.8V • 8.8A</div>
+      <div class="val-caption">Charge <span class="help-icon">?</span></div>
+    </div>
+
+    <!-- Node 5: Household Consuming (Bottom Right) -->
+    <div class="node node-load">
+      <div class="node-icon-circle">
+        <!-- SVG House with Bolt Icon -->
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+          <polyline points="13 10 11 14 13 14 11 18"/>
+        </svg>
+      </div>
+      <div class="val-hero" id="loadWatts">84<span style="font-size:0.9rem;">w</span></div>
+      <div class="val-sub" id="loadSub">230.0V • 1.21A</div>
+      <div class="val-caption">Consuming <span class="help-icon">?</span></div>
+    </div>
+
+  </div>
+
+  <!-- Pagination Carousel Dots -->
+  <div class="carousel-dots">
+    <div class="dot active"></div>
+    <div class="dot"></div>
+  </div>
+
+  <!-- Bottom Wi-Fi Status Bar -->
+  <div class="bottom-wifi">
+    <div class="wifi-indicator">
+      <span class="dot-green"></span>
+      <span id="wifiLabel">Wi-Fi: Connected to "Home_Solar" (192.168.1.150)</span>
+    </div>
+    <button class="btn-connect" onclick="alert('Opens network scanner!')">📶 Connect</button>
+  </div>
+
+</div>
+
+</body>
+</html>

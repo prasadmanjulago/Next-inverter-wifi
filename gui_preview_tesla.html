@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Option 1: Tesla Cyber Glass Solar UI</title>
+<style>
+  :root {
+    --bg: #07090e;
+    --card-bg: rgba(18, 24, 38, 0.7);
+    --border: rgba(255, 255, 255, 0.08);
+    --solar: #f59e0b;
+    --solar-glow: rgba(245, 158, 11, 0.35);
+    --battery: #10b981;
+    --battery-glow: rgba(16, 185, 129, 0.35);
+    --grid: #3b82f6;
+    --grid-glow: rgba(59, 130, 246, 0.35);
+    --load: #f43f5e;
+    --load-glow: rgba(244, 63, 94, 0.35);
+    --inv: #8b5cf6;
+    --text: #f8fafc;
+    --muted: #64748b;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, sans-serif;
+    background: radial-gradient(circle at 50% 20%, #111827 0%, var(--bg) 70%);
+    color: var(--text);
+    padding: 20px;
+    min-height: 100vh;
+  }
+  .container { max-width: 960px; margin: 0 auto; }
+  
+  /* Top Bar */
+  header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .logo-icon {
+    width: 36px; height: 36px;
+    border-radius: 10px;
+    background: linear-gradient(135deg, #f59e0b, #ef4444);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.2rem;
+    box-shadow: 0 0 20px rgba(245, 158, 11, 0.4);
+  }
+  .brand h1 { font-size: 1.15rem; font-weight: 700; letter-spacing: -0.5px; }
+  .brand span { font-size: 0.75rem; color: var(--muted); }
+  .mode-pill {
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    background: rgba(139, 92, 246, 0.15);
+    border: 1px solid rgba(139, 92, 246, 0.4);
+    color: #c4b5fd;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .mode-pill::before {
+    content: ""; width: 8px; height: 8px; border-radius: 50%;
+    background: #8b5cf6; box-shadow: 0 0 10px #8b5cf6;
+  }
+
+  /* Center Stage: Circular Power Flow */
+  .flow-stage {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    backdrop-filter: blur(20px);
+    border-radius: 24px;
+    padding: 30px 20px;
+    margin-bottom: 24px;
+    position: relative;
+    box-shadow: 0 20px 40px -15px rgba(0,0,0,0.5);
+  }
+  .flow-diagram {
+    position: relative;
+    width: 340px;
+    height: 340px;
+    margin: 0 auto;
+  }
+  .flow-svg {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+  }
+  .flow-path {
+    fill: none;
+    stroke-width: 3;
+    stroke-linecap: round;
+    stroke-dasharray: 6 8;
+    animation: flowDash 1.2s linear infinite;
+  }
+  @keyframes flowDash {
+    to { stroke-dashoffset: -28; }
+  }
+
+  /* Node Orbs */
+  .node-orb {
+    position: absolute;
+    width: 76px; height: 76px;
+    border-radius: 50%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    transform: translate(-50%, -50%);
+    background: #0f172a;
+    border: 2px solid;
+    z-index: 2;
+    transition: transform 0.2s;
+  }
+  .node-orb:hover { transform: translate(-50%, -50%) scale(1.08); }
+  .node-orb .icon { font-size: 1.25rem; line-height: 1; margin-bottom: 2px; }
+  .node-orb .val { font-size: 0.85rem; font-weight: 700; }
+  .node-orb .lbl { font-size: 0.62rem; color: var(--muted); text-transform: uppercase; font-weight: 600; }
+  
+  /* Positions */
+  .orb-solar { top: 12%; left: 50%; border-color: var(--solar); box-shadow: 0 0 24px var(--solar-glow); color: var(--solar); }
+  .orb-grid { top: 50%; left: 12%; border-color: var(--grid); box-shadow: 0 0 24px var(--grid-glow); color: var(--grid); }
+  .orb-load { top: 50%; left: 88%; border-color: var(--load); box-shadow: 0 0 24px var(--load-glow); color: var(--load); }
+  .orb-bat { top: 88%; left: 50%; border-color: var(--battery); box-shadow: 0 0 24px var(--battery-glow); color: var(--battery); }
+  .orb-inv {
+    top: 50%; left: 50%;
+    width: 96px; height: 96px;
+    border-color: var(--inv);
+    box-shadow: 0 0 35px rgba(139, 92, 246, 0.4);
+    background: radial-gradient(circle, #2e1065 0%, #0f172a 80%);
+    color: #e0e7ff;
+  }
+
+  /* Gauges & Cards Bento Grid */
+  .bento-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+  .bento-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    backdrop-filter: blur(16px);
+    border-radius: 18px;
+    padding: 18px;
+    position: relative;
+    overflow: hidden;
+  }
+  .bento-card h3 {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--muted);
+    margin-bottom: 10px;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .big-number { font-size: 2.1rem; font-weight: 800; letter-spacing: -1px; margin-bottom: 4px; }
+  .sub-metrics {
+    display: flex; justify-content: space-between;
+    font-size: 0.8rem; color: var(--muted);
+    margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.05);
+  }
+  .sub-metrics strong { color: var(--text); }
+
+  /* Radial Battery Meter */
+  .radial-meter {
+    display: flex; align-items: center; gap: 14px;
+  }
+  .radial-svg { width: 64px; height: 64px; transform: rotate(-90deg); }
+  .radial-bg { fill: none; stroke: rgba(255,255,255,0.1); stroke-width: 6; }
+  .radial-prog {
+    fill: none; stroke: var(--battery); stroke-width: 6;
+    stroke-linecap: round; stroke-dasharray: 175; stroke-dashoffset: 20;
+    transition: stroke-dashoffset 0.8s ease;
+  }
+
+  /* Bottom Controls & Wi-Fi */
+  .footer-bar {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    backdrop-filter: blur(16px);
+    border-radius: 16px;
+    padding: 12px 20px;
+    display: flex; justify-content: space-between; align-items: center;
+    flex-wrap: wrap; gap: 12px;
+  }
+  .wifi-tag { display: flex; align-items: center; gap: 8px; font-size: 0.85rem; }
+  .pulse-dot {
+    width: 8px; height: 8px; border-radius: 50%; background: #10b981;
+    box-shadow: 0 0 10px #10b981;
+  }
+  button.action-btn {
+    background: linear-gradient(135deg, #2563eb, #3b82f6);
+    border: none; color: white;
+    padding: 8px 16px; border-radius: 10px;
+    font-size: 0.85rem; font-weight: 600; cursor: pointer;
+    box-shadow: 0 4px 15px rgba(37, 99, 235, 0.4);
+    transition: transform 0.15s, opacity 0.15s;
+  }
+  button.action-btn:hover { transform: translateY(-1px); opacity: 0.95; }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <header>
+    <div class="brand">
+      <div class="logo-icon">⚡</div>
+      <div>
+        <h1>NEXT NM-ECO-6.2KW</h1>
+        <span>ESP32 Wi-Fi Smart Telemetry</span>
+      </div>
+    </div>
+    <div class="mode-pill">SBU Mode (Off-Grid Priority)</div>
+  </header>
+
+  <!-- Interactive Energy Flow Stage -->
+  <div class="flow-stage">
+    <div class="flow-diagram">
+      <svg class="flow-svg" viewBox="0 0 340 340">
+        <!-- Path Solar to Inverter -->
+        <path class="flow-path" d="M 170 55 L 170 170" stroke="#f59e0b" />
+        <!-- Path Inverter to Load -->
+        <path class="flow-path" d="M 170 170 L 285 170" stroke="#f43f5e" />
+        <!-- Path Battery to Inverter -->
+        <path class="flow-path" d="M 170 285 L 170 170" stroke="#10b981" />
+        <!-- Path Grid to Inverter (Standby / Off) -->
+        <path d="M 55 170 L 170 170" stroke="rgba(59,130,246,0.25)" stroke-width="2" stroke-dasharray="4 4" />
+      </svg>
+
+      <!-- Nodes -->
+      <div class="node-orb orb-solar">
+        <div class="icon">☀️</div>
+        <div class="val">1,240 W</div>
+        <div class="lbl">PV Solar</div>
+      </div>
+
+      <div class="node-orb orb-grid">
+        <div class="icon">🔌</div>
+        <div class="val">230 V</div>
+        <div class="lbl">Grid CEB</div>
+      </div>
+
+      <div class="node-orb orb-inv">
+        <div class="icon">⚡</div>
+        <div class="val">6.2 kW</div>
+        <div class="lbl" style="color:#c7d2fe;">38.4 °C</div>
+      </div>
+
+      <div class="node-orb orb-load">
+        <div class="icon">🏠</div>
+        <div class="val">680 W</div>
+        <div class="lbl">House Load</div>
+      </div>
+
+      <div class="node-orb orb-bat">
+        <div class="icon">🔋</div>
+        <div class="val">+560 W</div>
+        <div class="lbl">Charging</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bento Cards Grid -->
+  <div class="bento-grid">
+    <!-- Solar PV Card -->
+    <div class="bento-card">
+      <h3>Solar Generation <span style="color:var(--solar);">☀️ MPPT</span></h3>
+      <div class="big-number" style="color:var(--solar);">1,240 <span style="font-size:1.1rem; font-weight:500;">W</span></div>
+      <div class="sub-metrics">Voltage: <strong>142.5 V</strong></div>
+      <div class="sub-metrics">Current: <strong>8.7 A</strong></div>
+    </div>
+
+    <!-- Battery System Card with Radial Dial -->
+    <div class="bento-card">
+      <h3>14S NMC Battery <span style="color:var(--battery);">● Healthy</span></h3>
+      <div class="radial-meter">
+        <svg class="radial-svg" viewBox="0 0 64 64">
+          <circle class="radial-bg" cx="32" cy="32" r="28" />
+          <circle class="radial-prog" cx="32" cy="32" r="28" />
+        </svg>
+        <div>
+          <div class="big-number" style="color:var(--battery); font-size:1.9rem;">92<span style="font-size:1rem;">%</span></div>
+          <div style="font-size:0.75rem; color:var(--muted);">51.8 V (10A Chg)</div>
+        </div>
+      </div>
+      <div class="sub-metrics">Discharge Cutoff: <strong>46.2 V</strong></div>
+    </div>
+
+    <!-- Household Load Card -->
+    <div class="bento-card">
+      <h3>Household Load <span style="color:var(--load);">11% Capacity</span></h3>
+      <div class="big-number" style="color:var(--load);">680 <span style="font-size:1.1rem; font-weight:500;">W</span></div>
+      <div class="sub-metrics">Apparent: <strong>720 VA</strong></div>
+      <div class="sub-metrics">Output: <strong>230.1 V @ 50 Hz</strong></div>
+    </div>
+
+    <!-- Grid Status Card -->
+    <div class="bento-card">
+      <h3>Utility Grid <span style="color:var(--grid);">● Connected</span></h3>
+      <div class="big-number" style="color:var(--grid);">231.4 <span style="font-size:1.1rem; font-weight:500;">V</span></div>
+      <div class="sub-metrics">Frequency: <strong>50.0 Hz</strong></div>
+      <div class="sub-metrics">Grid Blending: <strong>0 W (Off)</strong></div>
+    </div>
+  </div>
+
+  <!-- Bottom Navigation / Status -->
+  <div class="footer-bar">
+    <div class="wifi-tag">
+      <div class="pulse-dot"></div>
+      <span>Wi-Fi: Connected to <b>"Home_Solar_5G"</b> (192.168.1.150)</span>
+    </div>
+    <div style="display:flex; gap:10px;">
+      <button class="action-btn" style="background:#334155;">⚡ Change Mode (SBU)</button>
+      <button class="action-btn">📶 Wi-Fi Settings</button>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
