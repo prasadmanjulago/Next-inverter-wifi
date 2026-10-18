@@ -10,12 +10,18 @@
 #include "inverter_protocol.h"
 #include "web_dashboard.h"
 
-#define FIRMWARE_VERSION "1.0.1"
+#define FIRMWARE_VERSION "1.0.2"
 
 // Hardware Serial 2 Pins for Inverter RS-232
 #define INVERTER_RX_PIN 16
 #define INVERTER_TX_PIN 17
 #define INVERTER_BAUD   2400
+
+int currentBaud = 2400;
+int currentRxPin = 16;
+int currentTxPin = 17;
+bool isPinsSwapped = false;
+bool autoBaudEnabled = true;
 
 const char *AP_SSID = "NextInverter-WIFI";
 
@@ -23,6 +29,21 @@ const char *AP_SSID = "NextInverter-WIFI";
 InverterTelemetry telemetry;
 WebServer server(80);
 Preferences preferences;
+
+void initSerial2(int baud, int rxPin, int txPin) {
+    Serial2.end();
+    delay(30);
+    Serial2.begin(baud, SERIAL_8N1, rxPin, txPin);
+    currentBaud = baud;
+    currentRxPin = rxPin;
+    currentTxPin = txPin;
+    telemetry.current_baud = baud;
+    telemetry.rx_pin = rxPin;
+    telemetry.tx_pin = txPin;
+    telemetry.pins_swapped = isPinsSwapped;
+    Serial.printf("[UART2] Configured: %d baud, RX=GPIO %d, TX=GPIO %d (Swapped: %s)\n",
+                  baud, rxPin, txPin, isPinsSwapped ? "YES" : "NO");
+}
 
 unsigned long lastPollTime = 0;
 const unsigned long POLL_INTERVAL = 3000; // Poll inverter every 3 seconds
@@ -230,9 +251,59 @@ void handleTelemetryApi() {
     json += "\"firmware_version\":\"" + String(FIRMWARE_VERSION) + "\",";
     json += "\"update_available\":" + String(updateAvailable ? "true" : "false") + ",";
     json += "\"latest_version\":\"" + latestVersion + "\",";
-    json += "\"github_repo\":\"" + githubRepo + "\"";
+    json += "\"github_repo\":\"" + githubRepo + "\",";
+
+    // Serial Diagnostics
+    json += "\"last_tx_cmd\":\"" + telemetry.last_tx_cmd + "\",";
+    String escapedRaw = telemetry.last_rx_raw;
+    escapedRaw.replace("\\", "\\\\");
+    escapedRaw.replace("\"", "\\\"");
+    escapedRaw.replace("\r", "");
+    escapedRaw.replace("\n", "");
+    json += "\"last_rx_raw\":\"" + escapedRaw + "\",";
+    json += "\"last_rx_hex\":\"" + telemetry.last_rx_hex + "\",";
+    json += "\"rx_byte_count\":" + String(telemetry.rx_byte_count) + ",";
+    json += "\"tx_byte_count\":" + String(telemetry.tx_byte_count) + ",";
+    json += "\"current_baud\":" + String(telemetry.current_baud) + ",";
+    json += "\"rx_pin\":" + String(telemetry.rx_pin) + ",";
+    json += "\"tx_pin\":" + String(telemetry.tx_pin) + ",";
+    json += "\"pins_swapped\":" + String(telemetry.pins_swapped ? "true" : "false");
     json += "}";
     server.send(200, "application/json", json);
+}
+
+String queryInverter(const char *cmd, unsigned long timeoutMs = 800);
+
+void handleSetBaud() {
+    if (server.hasArg("baud")) {
+        int b = server.arg("baud").toInt();
+        if (b == 2400 || b == 9600 || b == 19200 || b == 115200) {
+            autoBaudEnabled = false;
+            initSerial2(b, currentRxPin, currentTxPin);
+            server.send(200, "text/plain", "Baud set to " + String(b));
+            return;
+        }
+    }
+    server.send(400, "text/plain", "Invalid baud rate");
+}
+
+void handleSwapPins() {
+    isPinsSwapped = !isPinsSwapped;
+    int newRx = isPinsSwapped ? 17 : 16;
+    int newTx = isPinsSwapped ? 16 : 17;
+    initSerial2(currentBaud, newRx, newTx);
+    server.send(200, "text/plain", isPinsSwapped ? "Swapped (RX:17, TX:16)" : "Standard (RX:16, TX:17)");
+}
+
+void handleSendCmd() {
+    if (!server.hasArg("cmd")) {
+        server.send(400, "text/plain", "Missing cmd parameter");
+        return;
+    }
+    String cmd = server.arg("cmd");
+    cmd.trim();
+    String resp = queryInverter(cmd.c_str(), 1000);
+    server.send(200, "text/plain", resp);
 }
 
 void handleSetPriority() {
@@ -255,40 +326,73 @@ void handleSetPriority() {
     server.send(200, "text/plain", "Sent " + String(cmd) + " to Inverter!");
 }
 
-String queryInverter(const char *cmd, unsigned long timeoutMs = 1200) {
+String queryInverter(const char *cmd, unsigned long timeoutMs) {
     while (Serial2.available()) Serial2.read();
 
-    Serial.printf("[Inverter TX] %s\n", cmd);
+    telemetry.last_tx_cmd = String(cmd);
     VoltronicProtocol::sendCommand(Serial2, cmd);
+    telemetry.tx_byte_count += strlen(cmd) + 3;
 
     String resp = "";
+    String hexDump = "";
     unsigned long start = millis();
     while (millis() - start < timeoutMs) {
+        server.handleClient();
         if (Serial2.available()) {
-            char c = Serial2.read();
-            resp += c;
-            if (c == '\r') break;
+            char c = (char)Serial2.read();
+            telemetry.rx_byte_count++;
+
+            char hBuf[6];
+            snprintf(hBuf, sizeof(hBuf), "%02X ", (uint8_t)c);
+            hexDump += hBuf;
+
+            if (c >= 32 && c <= 126) {
+                resp += c;
+            } else if (c == '\r') {
+                resp += "\\r";
+                break;
+            } else if (c == '\n') {
+                resp += "\\n";
+            } else {
+                resp += '.';
+            }
         }
+        delay(2);
     }
-    resp.trim();
+    hexDump.trim();
+    telemetry.last_rx_raw = (resp.length() > 0) ? resp : "(No response / Timeout)";
+    telemetry.last_rx_hex = (hexDump.length() > 0) ? hexDump : "None";
     return resp;
 }
 
 void pollInverter() {
+    // If not connected, test alternating baud rates every 4 cycles (~12s)
+    if (!telemetry.valid && autoBaudEnabled) {
+        static int autoBaudCycle = 0;
+        autoBaudCycle++;
+        if (autoBaudCycle >= 4) {
+            autoBaudCycle = 0;
+            int nextBaud = (currentBaud == 2400) ? 9600 : 2400;
+            initSerial2(nextBaud, currentRxPin, currentTxPin);
+        }
+    }
+
     String qpigsResp = queryInverter("QPIGS");
-    if (qpigsResp.length() > 0 && qpigsResp.startsWith("(")) {
+    if (qpigsResp.length() > 0 && qpigsResp.indexOf('(') >= 0) {
         Serial.printf("[Inverter RX QPIGS] %s\n", qpigsResp.c_str());
         VoltronicProtocol::parseQPIGS(qpigsResp, telemetry);
+        autoBaudEnabled = false; // Lock in working baud rate!
     } else {
-        Serial.println("[Inverter RX] Waiting for RS232 data (QPIGS)...");
         if (millis() - telemetry.last_update > 8000) {
             telemetry.valid = false;
         }
     }
 
-    String qmodResp = queryInverter("QMOD");
-    if (qmodResp.length() > 0 && qmodResp.startsWith("(")) {
-        VoltronicProtocol::parseQMOD(qmodResp, telemetry);
+    if (telemetry.valid) {
+        String qmodResp = queryInverter("QMOD");
+        if (qmodResp.length() > 0 && qmodResp.indexOf('(') >= 0) {
+            VoltronicProtocol::parseQMOD(qmodResp, telemetry);
+        }
     }
 }
 
@@ -300,10 +404,8 @@ void setup() {
     Serial.printf("  Firmware: v%s (OTA Enabled)\n", FIRMWARE_VERSION);
     Serial.println("==========================================");
 
-    // Initialize Inverter Serial2 (RX2=GPIO16, TX2=GPIO17)
-    Serial2.begin(INVERTER_BAUD, SERIAL_8N1, INVERTER_RX_PIN, INVERTER_TX_PIN);
-    Serial.printf("[UART2] Inverter Port Initialized (RX=GPIO%d, TX=GPIO%d, Baud=%d)\n", 
-                  INVERTER_RX_PIN, INVERTER_TX_PIN, INVERTER_BAUD);
+    // Initialize Inverter Serial2
+    initSerial2(INVERTER_BAUD, INVERTER_RX_PIN, INVERTER_TX_PIN);
 
     // Read stored Wi-Fi credentials
     preferences.begin("wifi", true);
@@ -361,6 +463,9 @@ void setup() {
     server.on("/api/check_update", handleCheckUpdate);
     server.on("/api/do_github_update", HTTP_POST, handleDoGithubUpdate);
     server.on("/api/save_github_repo", HTTP_POST, handleSaveGithubRepo);
+    server.on("/api/set_baud", HTTP_POST, handleSetBaud);
+    server.on("/api/swap_pins", HTTP_POST, handleSwapPins);
+    server.on("/api/send_cmd", HTTP_POST, handleSendCmd);
 
     // Browser Direct Web OTA (/update)
     server.on("/update", HTTP_POST, []() {

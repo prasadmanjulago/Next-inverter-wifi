@@ -36,6 +36,17 @@ struct InverterTelemetry {
     bool load_on_inverter = false;
     bool solar_charging = false;
     bool grid_charging = false;
+
+    // Serial Debug & Raw Telemetry
+    String last_tx_cmd = "QPIGS";
+    String last_rx_raw = "(Waiting for data...)";
+    String last_rx_hex = "--";
+    unsigned long rx_byte_count = 0;
+    unsigned long tx_byte_count = 0;
+    int current_baud = 2400;
+    int rx_pin = 16;
+    int tx_pin = 17;
+    bool pins_swapped = false;
 };
 
 class VoltronicProtocol {

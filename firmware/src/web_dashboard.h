@@ -246,6 +246,59 @@ const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
     background: #f97316;
   }
 
+  /* Serial Diagnostics Panel */
+  .diag-card {
+    background: #0f172a;
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 14px;
+    padding: 10px 12px;
+    margin-bottom: 10px;
+    color: #f8fafc;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.72rem;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  }
+  .diag-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 4px;
+  }
+  .diag-box {
+    background: #020617;
+    border: 1px solid #1e293b;
+    border-radius: 6px;
+    padding: 5px 7px;
+    word-break: break-all;
+    font-size: 0.68rem;
+    min-height: 18px;
+    margin-top: 2px;
+  }
+  .diag-btn-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 8px;
+  }
+  .btn-diag {
+    background: #1e293b;
+    color: #f1f5f9;
+    border: 1px solid #334155;
+    border-radius: 6px;
+    padding: 5px 8px;
+    font-size: 0.68rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s;
+    font-family: inherit;
+  }
+  .btn-diag:hover {
+    background: #334155;
+  }
+  .btn-diag:active {
+    transform: scale(0.97);
+  }
+
   /* Bottom Wi-Fi Bar */
   .bottom-wifi {
     background: #ffffff;
@@ -450,6 +503,49 @@ const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
     <div class="dot"></div>
   </div>
 
+  <!-- Live Serial Diagnostics & Raw Data -->
+  <div class="diag-card">
+    <div class="diag-row" style="margin-bottom:6px;">
+      <span style="font-weight:700; color:#38bdf8; display:flex; align-items:center; gap:4px;">
+        📡 Serial Diagnostics (RS-232)
+      </span>
+      <div style="display:flex; gap:4px;">
+        <span id="diagBaudBadge" style="background:#1e293b; padding:2px 6px; border-radius:5px; color:#fbbf24; font-size:0.65rem;">2400 bps</span>
+        <span id="diagPinBadge" style="background:#1e293b; padding:2px 6px; border-radius:5px; color:#a7f3d0; font-size:0.65rem;">RX:16 TX:17</span>
+      </div>
+    </div>
+
+    <div class="diag-row" style="font-size:0.65rem; color:#94a3b8; margin-bottom:6px;">
+      <span>TX Bytes: <b id="diagTxBytes" style="color:#e2e8f0;">0 B</b></span>
+      <span>RX Bytes: <b id="diagRxBytes" style="color:#e2e8f0;">0 B</b></span>
+    </div>
+
+    <div style="margin-bottom:5px;">
+      <span style="color:#64748b;">Last TX Command:</span>
+      <b id="diagLastTx" style="color:#4ade80; margin-left:4px;">QPIGS</b>
+    </div>
+
+    <div style="margin-bottom:5px;">
+      <span style="color:#64748b;">Last RX Raw String:</span>
+      <div id="diagLastRx" class="diag-box" style="color:#38bdf8;">(Waiting for serial feed...)</div>
+    </div>
+
+    <div style="margin-bottom:6px;">
+      <span style="color:#64748b;">Last RX Hex Dump:</span>
+      <div id="diagLastHex" class="diag-box" style="color:#c084fc; font-size:0.62rem;">--</div>
+    </div>
+
+    <!-- Quick Control Buttons -->
+    <div class="diag-btn-group">
+      <button class="btn-diag" onclick="setBaud(2400)">2400</button>
+      <button class="btn-diag" onclick="setBaud(9600)">9600</button>
+      <button class="btn-diag" style="background:#047857;" onclick="swapPins()">🔀 Swap RX/TX</button>
+      <button class="btn-diag" style="flex:1;" onclick="sendManualCmd('QPIGS')">Send QPIGS</button>
+      <button class="btn-diag" onclick="sendManualCmd('QMOD')">QMOD</button>
+      <button class="btn-diag" onclick="sendManualCmd('QPI')">QPI</button>
+    </div>
+  </div>
+
   <!-- Bottom Wi-Fi & Settings Bar -->
   <div class="bottom-wifi">
     <div class="wifi-indicator">
@@ -605,6 +701,17 @@ async function refreshData() {
       document.getElementById('githubRepoInput').value = d.github_repo;
     }
 
+    // Serial Diagnostics
+    if (d.last_tx_cmd) document.getElementById('diagLastTx').textContent = d.last_tx_cmd;
+    if (d.last_rx_raw !== undefined) document.getElementById('diagLastRx').textContent = d.last_rx_raw;
+    if (d.last_rx_hex !== undefined) document.getElementById('diagLastHex').textContent = d.last_rx_hex;
+    if (d.rx_byte_count !== undefined) document.getElementById('diagRxBytes').textContent = d.rx_byte_count + ' B';
+    if (d.tx_byte_count !== undefined) document.getElementById('diagTxBytes').textContent = d.tx_byte_count + ' B';
+    if (d.current_baud !== undefined) document.getElementById('diagBaudBadge').textContent = d.current_baud + ' bps';
+    if (d.rx_pin !== undefined && d.tx_pin !== undefined) {
+      document.getElementById('diagPinBadge').textContent = (d.pins_swapped ? '🔀 ' : '') + 'RX:' + d.rx_pin + ' TX:' + d.tx_pin;
+    }
+
   } catch(e) {
     const connBadge = document.getElementById('invConnBadge');
     if (connBadge) {
@@ -618,6 +725,31 @@ async function refreshData() {
     }
     document.getElementById('sysMode').textContent = 'Connecting...';
   }
+}
+
+async function setBaud(b) {
+  try {
+    await fetch('/api/set_baud?baud=' + b, { method: 'POST' });
+    document.getElementById('diagBaudBadge').textContent = b + ' bps';
+    refreshData();
+  } catch(e) {}
+}
+
+async function swapPins() {
+  try {
+    const res = await fetch('/api/swap_pins', { method: 'POST' });
+    const txt = await res.text();
+    alert('UART Pins: ' + txt);
+    refreshData();
+  } catch(e) {}
+}
+
+async function sendManualCmd(cmd) {
+  try {
+    document.getElementById('diagLastTx').textContent = cmd + ' (sending...)';
+    await fetch('/api/send_cmd?cmd=' + encodeURIComponent(cmd), { method: 'POST' });
+    refreshData();
+  } catch(e) {}
 }
 
 function openWifiModal() {
