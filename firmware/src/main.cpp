@@ -432,10 +432,30 @@ void sendThingsBoardTelemetry() {
     float avgPvA = tbAccumulator.sum_pv_current / n;
     float avgPvW = tbAccumulator.sum_pv_watts / n;
 
+    // Direct Power Channels for ThingsBoard Line Charts
+    float avgBatPwrW = (avgBatChgA > 0) ? ((float)avgBatChgA * avgBatV) : ((avgBatDisA > 0) ? (-(float)avgBatDisA * avgBatV) : 0.0);
+    float avgBatChgW = (avgBatChgA > 0) ? ((float)avgBatChgA * avgBatV) : 0.0;
+    float avgBatDisW = (avgBatDisA > 0) ? ((float)avgBatDisA * avgBatV) : 0.0;
+
+    float avgGridW = 0.0;
+    if (telemetry.mode_char == 'L' || telemetry.grid_charging) {
+        float demand = (float)avgAcOutW + avgBatChgW;
+        avgGridW = (demand > avgPvW) ? (demand - avgPvW) : 0.0;
+    }
+
     // Reset accumulator for next interval
     tbAccumulator.reset();
 
     String payload = "{";
+    // Explicit Chart Keys
+    payload += "\"load_watts\":" + String(avgAcOutW) + ",";
+    payload += "\"solar_watts\":" + String(avgPvW, 1) + ",";
+    payload += "\"grid_watts\":" + String(avgGridW, 1) + ",";
+    payload += "\"battery_power_watts\":" + String(avgBatPwrW, 1) + ",";
+    payload += "\"battery_charge_watts\":" + String(avgBatChgW, 1) + ",";
+    payload += "\"battery_discharge_watts\":" + String(avgBatDisW, 1) + ",";
+
+    // Standard Telemetry Keys
     payload += "\"grid_voltage\":" + String(avgGridV, 1) + ",";
     payload += "\"grid_frequency\":" + String(avgGridHz, 1) + ",";
     payload += "\"ac_output_voltage\":" + String(avgAcOutV, 1) + ",";
