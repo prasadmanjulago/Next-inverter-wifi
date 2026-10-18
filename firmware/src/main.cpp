@@ -433,9 +433,13 @@ void sendThingsBoardTelemetry() {
     float avgPvW = tbAccumulator.sum_pv_watts / n;
 
     // Direct Power Channels for ThingsBoard Line Charts
-    float avgBatPwrW = (avgBatChgA > 0) ? ((float)avgBatChgA * avgBatV) : ((avgBatDisA > 0) ? (-(float)avgBatDisA * avgBatV) : 0.0);
+    // Battery Input: Power contributed by battery to the load (Positive Watts when discharging)
+    float avgBatInputW = (avgBatDisA > 0) ? ((float)avgBatDisA * avgBatV) : 0.0;
     float avgBatChgW = (avgBatChgA > 0) ? ((float)avgBatChgA * avgBatV) : 0.0;
-    float avgBatDisW = (avgBatDisA > 0) ? ((float)avgBatDisA * avgBatV) : 0.0;
+    float avgBatDisW = avgBatInputW;
+
+    // Positive (+) when powering load, negative (-) when charging
+    float avgBatPwrW = (avgBatDisA > 0) ? ((float)avgBatDisA * avgBatV) : ((avgBatChgA > 0) ? (-(float)avgBatChgA * avgBatV) : 0.0);
 
     float avgGridW = 0.0;
     if (telemetry.mode_char == 'L' || telemetry.grid_charging) {
@@ -452,6 +456,7 @@ void sendThingsBoardTelemetry() {
     payload += "\"solar_watts\":" + String(avgPvW, 1) + ",";
     payload += "\"grid_watts\":" + String(avgGridW, 1) + ",";
     payload += "\"battery_power_watts\":" + String(avgBatPwrW, 1) + ",";
+    payload += "\"battery_input_watts\":" + String(avgBatInputW, 1) + ",";
     payload += "\"battery_charge_watts\":" + String(avgBatChgW, 1) + ",";
     payload += "\"battery_discharge_watts\":" + String(avgBatDisW, 1) + ",";
 
