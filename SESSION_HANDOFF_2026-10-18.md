@@ -1,69 +1,91 @@
 # Next Inverter Wi-Fi Card — Project Progress & Handoff Summary
 **Session Date:** October 18, 2026  
 **Workspace:** `D:\House wiring\Next Inverter WIFI Card`  
-**Host Hardware:** ESP32 DevKit V1 Type-C (Silicon Labs CP2102, COM4)  
-**Target Inverter:** NEXT NM-ECO-6.2KW PLUS Hybrid Inverter  
+**Target Hardware:** ESP32 DevKit V1 Type-C + Mini MAX3232 Transceiver + NEXT NM-ECO-6.2KW PLUS Inverter  
+**Live IP Address:** [http://192.168.1.15](http://192.168.1.15) (SSID: `Easytech3D Solutions`)  
+**GitHub Repository:** [prasadmanjulago/Next-inverter-wifi](https://github.com/prasadmanjulago/Next-inverter-wifi) (Latest Release: `v1.0.2`)  
 
 ---
 
-## 1. What Was Completed in Today's Session
+## 1. Major Breakthroughs & Hardware Findings in This Session
 
-### A. Hardware & Driver Configuration
-1. **USB-UART Driver Resolution:** Diagnosed Windows `Code 28` error on the CP2102 chip; installed official Silicon Labs VCP driver, successfully mapping the ESP32 to **`COM4`**.
-2. **PlatformIO Toolchain Integration:** Installed `PlatformIO Core 6.2.0`, `espressif32@7.1.3` platform, and `xtensa-esp32` toolchain locally.
+### A. Inverter RS-232 Port 12 Confirmed with Multimeter
+* **Multimeter Measurement:** The user measured **`-13.62V DC`** on the **Orange-White wire (RJ45 Pin 1)** relative to **Brown wire (Pin 8 / GND)**.
+* **Significance:** In RS-232 standards, an idle negative voltage ($-5\text{V}$ to $-15\text{V}$) is the textbook mark state. This proves **100% that Orange-White is the Inverter's TXD line**.
+* **Safety Save:** An earlier specification mistakenly listed Pins 1 & 2 as 12V. The user questioned this, preventing +12V from being injected into the inverter's serial transceivers.
 
-### B. Pin Mapping Architecture (ESP32 DevKit V1)
-| ESP32 Pin | Connects To | Voltage Level | Function |
-| :--- | :--- | :---: | :--- |
-| **`GPIO 16 (RX2)`** | MAX3232 `ROUT` | 3.3V TTL | Receives RS-232 telemetry from Inverter Port 12 |
-| **`GPIO 17 (TX2)`** | MAX3232 `TIN` | 3.3V TTL | Sends `QPIGS` / `QMOD` commands to Inverter |
-| **`VIN (5V)`** | LM2596 Output | +5.0V DC | Main board power rail (stepped down from 12V RJ45 aux) |
-| **`3V3 Out`** | MAX3232 `VCC` | +3.3V DC | Powers MAX3232 at 3.3V to protect ESP32 GPIOs |
-| **`GND`** | Common Ground | 0V | Unified ground plane |
-| **USB Type-C** | PC (`COM4`) | 5V / USB | Serial debug monitor (115200) & firmware upload (921600) |
+### B. Inverter OEM Identification
+* **OEM Manufacturer:** **Guangdong Sunray Power Co., Ltd.** (Sunray / SUMRY).
+* **OEM Model:** **SUMRY NM-ECO-6.2KW** / Sunray NM-ECO-6.2KW PLUS.
+* **Protocol:** **Voltronic PI30 Protocol** (`QPIGS`, `QMOD`, `QPI`, `POP00/01/02`) at `2400` or `9600` baud.
+* **Inverter Menu Setting:** There is **NO setting to turn on** in the inverter menu; the RS-232 port is permanently active hardware-wise.
 
----
-
-## 2. Firmware Architecture & Source Code
-
-Located in: [`Next Inverter WIFI Card/firmware/`](file:///D:/House%20wiring/Next%20Inverter%20WIFI%20Card/firmware)
-
-### Files Created & Flashed:
-1. **`platformio.ini`**: Configured for `esp32doit-devkit-v1`, upload & monitor port on **COM4**, high-speed 921600 baud flashing.
-2. **`src/inverter_protocol.h`**:
-   * Exact Voltronic/Axpert CRC16 checksum calculation (avoiding control bytes `0x0A`, `0x0D`, `0x28`).
-   * Parses `QPIGS` response: Grid V/Hz, Output V/Hz/Watts/VA/Load%, Battery Volts/Charge/Discharge/SoC%, Solar PV Volts/Amps/Watts, Heatsink Temp °C.
-   * Parses `QMOD` operation mode (SBU, SUB, Line, Battery, Standby, Fault).
-3. **`src/web_dashboard.h`**:
-   * **SmartESS 1:1 App Replica:** Matching the exact layout from user reference image with 5 circular nodes (Solar, Grid, Inverter, Battery, Home Load).
-   * **Separated Energy Flow Paths:** 30px parallel trunk separation between Solar/Battery (left at $x=165$) and Grid/Load (right at $x=195$) with zero overlaps.
-   * **Live Inverter Status Pill:**
-     * `🟢 Inverter Connected` with live timestamp when valid serial feed is active.
-     * `🔴 Inverter Disconnected` (with 8-second auto-timeout if data stops).
-   * **Automatic 2.4GHz Wi-Fi Scanner:** Dropdown menu that automatically scans nearby networks with RSSI dBm and lock indicators.
-   * **Fallback AP Hotspot:** Boots into **`NextInverter-WIFI`** (`192.168.4.1`) if home Wi-Fi is unavailable.
-4. **`src/main.cpp`**: Main event loop, dual UART management, preferences NVS storage for credentials, and REST API endpoints (`/api/telemetry`, `/api/wifi_scan`, `/wifi_save`, `/api/set_priority`).
+### C. MAX3232 Dual-Channel Discovery
+* The MAX3232 module contains **two completely independent transceiver channels**:
+  * **Channel 1:** `T1IN` (TTL) $\rightarrow$ `T1OUT` (RS-232) and `R1IN` (RS-232) $\rightarrow$ `R1OUT` (TTL).
+  * **Channel 2:** `T2IN` (TTL) $\rightarrow$ `T2OUT` (RS-232) and `R2IN` (RS-232) $\rightarrow$ `R2OUT` (TTL).
+* **Cause of 1.6V Reading:** When signals were split across Channel 1 and Channel 2, the signal path was open-circuited inside the chip, leaving the unused output floating at half-supply (~1.6V).
+* **Solution:** Wire strictly to **Channel 1**.
 
 ---
 
-## 3. UI Previews Available for Inspection
+## 2. Final Hardware Wiring Specification (Channel 1)
 
-* **SmartESS Replica:** [`gui_smartess_replica.html`](file:///D:/House%20wiring/Next%20Inverter%20WIFI%20Card/gui_smartess_replica.html)
-* **Tesla Cyber Glass:** [`gui_preview_tesla.html`](file:///D:/House%20wiring/Next%20Inverter%20WIFI%20Card/gui_preview_tesla.html)
-* **SunSynk Blueprint:** [`gui_preview_sunsynk.html`](file:///D:/House%20wiring/Next%20Inverter%20WIFI%20Card/gui_preview_sunsynk.html)
+```
+[ Inverter Port 12 (RJ45) ]                  [ MAX3232 Module ]                   [ ESP32 DevKit V1 ]
+Pin 1 (Orange-White, -13.6V) ──► RS232 Side: R1IN  ──► TTL Side: R1OUT ──► RX2 (GPIO 16)
+Pin 2 (Orange, Inverter RX)  ◄── RS232 Side: T1OUT ◄── TTL Side: T1IN  ◄── TX2 (GPIO 17)
+Pin 8 (Brown, Inverter GND)  ──► RS232 Side: GND   ──► TTL Side: GND   ──► GND (Common Ground)
+                                                       TTL Side: VCC   ──► 3V3 Out (or VIN 5V if needed)
+```
+
+*(Leave `T2IN`, `T2OUT`, `R2IN`, `R2OUT` completely disconnected).*
 
 ---
 
-## 4. Future Roadmap: The 9-Card Solar-Assistant / Grafana Dashboard
+## 3. Firmware v1.0.2 Architecture & Live Diagnostics
 
-As per user reference image (`media_1792304091915_4eb6cda9.png`), future sessions will expand this into a multi-card dashboard:
+### Features Implemented & Flashed Over-The-Air:
+1. **Live Serial Diagnostics Panel on Web Screen:**
+   * Shows active baud rate (`2400` / `9600 bps`).
+   * Shows pin configuration (`RX:16 TX:17`).
+   * Shows real-time TX/RX byte counters.
+   * Shows exact **Last RX Raw** ASCII string and **Last RX Hex** dump.
+2. **Interactive Controls directly on the Dashboard:**
+   * **`2400` / `9600` Baud Switchers:** Changes UART baud rate on the fly.
+   * **`🔀 Swap RX/TX` Button:** Dynamically swaps GPIO 16 and 17 in software (resolves reversed wiring without physical rewiring).
+   * **`Send QPIGS` / `Send QMOD` / `Send QPI`:** Immediate one-click manual command tests.
+3. **Auto-Baud Detection:**
+   * When disconnected, automatically alternates testing between 2400 and 9600 baud, locking in automatically once the inverter answers.
+4. **Non-Blocking Serial Polling:**
+   * `server.handleClient()` called inside serial reading loops so web dashboard remains lightning-fast (<10ms).
+5. **Wireless OTA Engine:**
+   * Full Over-The-Air firmware updates enabled directly from GitHub releases and browser file upload endpoint (`/update`).
 
-1. **Card 1 (Completed):** SmartESS Live Orthogonal Energy Flow (Solar $\rightarrow$ Inverter $\rightarrow$ Home $\rightleftarrows$ Battery).
-2. **Card 2:** Solar Input History Chart (Solar Power W & Solar Voltage V over 24h).
-3. **Card 3:** Cell Voltages & Cell Delta mV chart (integrating JK BMS data).
-4. **Card 4:** Total Power Area Chart (Inverter output, Solar input, Net power, Battery flow).
-5. **Card 5:** DC Battery Voltage curves (Inverter reported vs BMS reported).
-6. **Card 6:** AC Voltages timeline (Grid CEB voltage vs Inverter AC output voltage).
-7. **Card 7:** Live Parameter State Table (Time, Sensor name, Last value).
-8. **Card 8:** Output Load semi-circle speedometer gauge (0–100% capacity).
-9. **Card 9:** Total Daily Energy Generation counter (`kWh`).
+---
+
+## 4. Git Synchronization Status
+
+* **Repository:** `https://github.com/prasadmanjulago/Next-inverter-wifi`
+* **Branch:** `main`
+* **Latest Commit:** `0ecfe76` — *"Release v1.0.2: Serial Diagnostics, Raw Hex/ASCII Feed, Auto-Baud (2400/9600), and Software RX/TX Pin Swap"*
+* **Synced Files:**
+  * `firmware/src/main.cpp`
+  * `firmware/src/web_dashboard.h`
+  * `firmware/src/inverter_protocol.h`
+  * `firmware.bin` (Compiled v1.0.2 binary, 1,057,760 bytes)
+  * `version.json` (v1.0.2 metadata)
+
+---
+
+## 5. Immediate Next Steps for Next Session
+
+1. **Verify Channel 1 Voltage:**
+   * Connect `T1IN` to ESP32 `TX2` (GPIO 17).
+   * Measure `T1OUT` with multimeter relative to GND. Confirm it outputs negative resting voltage ($-5\text{V}$ to $-9\text{V}$).
+2. **Connect to Inverter:**
+   * Plug `T1OUT` into Inverter Orange wire (Pin 2).
+   * Plug `R1IN` into Inverter Orange-White wire (Pin 1).
+3. **Verify Dashboard:**
+   * Open [http://192.168.1.15](http://192.168.1.15).
+   * Watch **Last RX Raw** and the status header change from `🔴 Inverter Disconnected` to `🟢 Inverter Connected`.
