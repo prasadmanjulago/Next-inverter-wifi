@@ -10,7 +10,7 @@
 #include "inverter_protocol.h"
 #include "web_dashboard.h"
 
-#define FIRMWARE_VERSION "1.0.0"
+#define FIRMWARE_VERSION "1.0.1"
 
 // Hardware Serial 2 Pins for Inverter RS-232
 #define INVERTER_RX_PIN 16

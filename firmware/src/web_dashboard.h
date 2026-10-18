@@ -459,6 +459,12 @@ const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
     <button class="btn-connect" onclick="openWifiModal()">⚙️ Settings & Wi-Fi</button>
   </div>
 
+  <!-- Firmware Version Footer -->
+  <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.7rem; color:#64748b; margin-top:8px; padding:0 6px;">
+    <span>NEXT Inverter Wi-Fi Card</span>
+    <span>Firmware: <b id="footerVersion" style="color:#0f172a;">v1.0.1</b></span>
+  </div>
+
 </div>
 
 <!-- Settings & Wireless OTA Modal -->
@@ -593,6 +599,8 @@ async function refreshData() {
       document.getElementById('otaBanner').style.display = 'none';
     }
     document.getElementById('curVer').textContent = 'v' + d.firmware_version;
+    const footVer = document.getElementById('footerVersion');
+    if (footVer) footVer.textContent = 'v' + d.firmware_version;
     if (d.github_repo && !document.getElementById('githubRepoInput').value) {
       document.getElementById('githubRepoInput').value = d.github_repo;
     }
