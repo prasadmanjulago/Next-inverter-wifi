@@ -1740,6 +1740,9 @@ const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
     <input type="password" id="bmsPin" placeholder="Default is 1234 (or 123456)" value="1234" maxlength="16" style="margin-bottom:6px;">
     <div style="font-size:0.68rem; color:#64748b; margin-bottom:12px;">Standard factory PIN is <code>1234</code>. Enter your custom PIN if changed in the JK app.</div>
 
+    <!-- Live BLE Diagnostics Status Box -->
+    <div id="bmsDiagInfo" style="display:none; margin-bottom:10px; padding:8px 10px; background:#f1f5f9; border:1px solid #cbd5e1; border-radius:8px; font-size:0.68rem; color:#334155; line-height:1.45;"></div>
+
     <div id="bmsModalMsg" style="font-size:0.75rem; font-weight:600; margin-bottom:8px;"></div>
 
     <div class="modal-buttons">
@@ -1902,7 +1905,8 @@ function renderBmsData(bms) {
   if (bms.connected && bms.valid) {
     statusSub.innerHTML = `<span style="color:#059669; font-weight:700;">🟢 Connected: ${escapeHtml(bms.name || 'JK-BMS')}</span> (RSSI: ${bms.rssi} dBm${bms.balancing ? ' • ⚖️ Balancing' : ''})`;
   } else if (bms.connected) {
-    statusSub.innerHTML = `<span style="color:#2563eb; font-weight:700;">🔵 Connected</span> (Waiting for telemetry stream...)`;
+    const rxInfo = (bms.rx_packets !== undefined) ? ` • Rx: ${bms.rx_packets} pkts, Tx: ${bms.tx_cmds || 0}` : '';
+    statusSub.innerHTML = `<span style="color:#2563eb; font-weight:700;">🔵 Connected</span> (Waiting for telemetry stream${rxInfo}...)`;
   } else if (bms.enabled) {
     statusSub.innerHTML = `<span style="color:#d97706; font-weight:700;">🟡 ${escapeHtml(bms.status || 'Connecting...')}</span>`;
   } else {
@@ -1986,11 +1990,13 @@ function renderBmsData(bms) {
 // -------------------------------------------------------------
 // JK-BMS Setup Modal & Bluetooth Scanner Functions
 // -------------------------------------------------------------
+let discoveredBmsDevices = [];
+
 async function openBmsModal() {
   document.getElementById('bmsModal').classList.add('active');
   document.getElementById('bmsModalMsg').textContent = '';
   try {
-    const res = await fetch('/api/bms_config');
+    const res = await fetch('/api/bms_telemetry');
     if (res.ok) {
       const cfg = await res.json();
       document.getElementById('bmsEnabled').checked = !!cfg.enabled;
@@ -1998,9 +2004,26 @@ async function openBmsModal() {
       document.getElementById('bmsDeviceName').value = cfg.name || '';
       document.getElementById('bmsPin').value = cfg.pin || '1234';
       if (cfg.connected) {
-        document.getElementById('bmsScanStatus').textContent = `🟢 Currently connected to ${cfg.name || cfg.mac}`;
+        document.getElementById('bmsScanStatus').textContent = `🟢 Currently connected to ${cfg.name || cfg.mac} (${cfg.rssi} dBm)`;
       } else {
         document.getElementById('bmsScanStatus').textContent = `Status: ${cfg.status || 'Disconnected'}`;
+      }
+
+      // Display live BLE Diagnostic status
+      const diag = document.getElementById('bmsDiagInfo');
+      if (diag && (cfg.connected || cfg.enabled)) {
+        diag.style.display = 'block';
+        let logsHtml = '';
+        if (cfg.logs && cfg.logs.length) {
+          logsHtml = `<div style="margin-top:6px; font-family:monospace; font-size:0.62rem; background:#1e293b; color:#38bdf8; padding:5px 8px; border-radius:6px; max-height:95px; overflow-y:auto; line-height:1.4;">` +
+                     cfg.logs.map(l => escapeHtml(l)).join('<br>') + `</div>`;
+        }
+        diag.innerHTML = `<b>Live BLE Diagnostics:</b><br>` +
+                         `• Status: <b>${escapeHtml(cfg.status || 'Unknown')}</b> | Write: <code>0x${(cfg.write_hdl || 0).toString(16).toUpperCase()}</code> | Notify: <code>0x${(cfg.notify_hdl || 0).toString(16).toUpperCase()}</code><br>` +
+                         `• Packets Rx: <b>${cfg.rx_packets || 0}</b> (${cfg.rx_bytes || 0} B) | Tx: <b>${cfg.tx_cmds || 0}</b> | Last Hex: <code>${escapeHtml(cfg.last_hex || 'None')}</code>` +
+                         logsHtml;
+      } else if (diag) {
+        diag.style.display = 'none';
       }
     }
   } catch(e) {}
@@ -2022,22 +2045,22 @@ async function scanBmsDevices() {
   try {
     const res = await fetch('/api/bms_scan');
     const list = await res.json();
-    sel.innerHTML = '<option value="" disabled selected>-- Select Discovered Device --</option>';
+    discoveredBmsDevices = Array.isArray(list) ? list : [];
+    sel.innerHTML = '<option value="" disabled selected>-- Select Discovered BMS --</option>';
 
-    if (!list || list.length === 0) {
+    if (!discoveredBmsDevices || discoveredBmsDevices.length === 0) {
       statusEl.textContent = 'No Bluetooth devices detected. Ensure JK-BMS is powered on and nearby.';
     } else {
-      statusEl.textContent = `Found ${list.length} Bluetooth devices:`;
+      statusEl.textContent = `Found ${discoveredBmsDevices.length} Bluetooth devices:`;
       let autoSelected = false;
-      list.forEach(d => {
+      discoveredBmsDevices.forEach(d => {
         const opt = document.createElement('option');
         opt.value = d.mac;
-        opt.dataset.name = d.name;
         opt.textContent = `${d.is_jk ? '⭐ [JK-BMS] ' : ''}${d.name} (${d.mac}) [${d.rssi} dBm]`;
         sel.appendChild(opt);
 
-        // Auto select first JK device found
-        if (d.is_jk && !autoSelected) {
+        // Auto select first JK device found if fields are empty
+        if (d.is_jk && !autoSelected && !document.getElementById('bmsDeviceMac').value) {
           sel.value = d.mac;
           document.getElementById('bmsDeviceMac').value = d.mac;
           document.getElementById('bmsDeviceName').value = d.name;
@@ -2055,10 +2078,14 @@ async function scanBmsDevices() {
 
 function onBmsDeviceSelected() {
   const sel = document.getElementById('bmsDeviceSelect');
-  const opt = sel.options[sel.selectedIndex];
-  if (opt && opt.value) {
-    document.getElementById('bmsDeviceMac').value = opt.value;
-    document.getElementById('bmsDeviceName').value = opt.dataset.name || '';
+  const mac = sel.value;
+  if (!mac) return;
+  const dev = discoveredBmsDevices.find(d => d.mac === mac);
+  if (dev) {
+    document.getElementById('bmsDeviceMac').value = dev.mac;
+    document.getElementById('bmsDeviceName').value = dev.name;
+  } else {
+    document.getElementById('bmsDeviceMac').value = mac;
   }
 }
 

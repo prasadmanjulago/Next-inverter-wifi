@@ -13,7 +13,7 @@
 #include "inverter_diagnostics_page.h"
 #include "jk_bms_ble.h"
 
-#define FIRMWARE_VERSION "1.1.7"
+#define FIRMWARE_VERSION "1.2.0"
 
 // Hardware Serial 2 Pins for Inverter RS-232
 #define INVERTER_RX_PIN 16
@@ -26,6 +26,7 @@ int currentTxPin = 17;
 bool isPinsSwapped = false;
 bool autoBaudEnabled = true;
 bool isMacroExecuting = false;
+bool isOtaUpdating = false;
 
 const char *AP_SSID = "NextInverter-WIFI";
 
@@ -320,6 +321,12 @@ void handleTelemetryApi() {
     json += "\"temp_sensor2\":" + String(b.temp_sensor2, 1) + ",";
     json += "\"pack_voltage\":" + String(b.pack_voltage, 2) + ",";
     json += "\"balancing\":" + String(b.balancing ? "true" : "false") + ",";
+    json += "\"rx_packets\":" + String(b.rx_packet_count) + ",";
+    json += "\"rx_bytes\":" + String(b.rx_byte_count) + ",";
+    json += "\"tx_cmds\":" + String(b.tx_cmd_count) + ",";
+    json += "\"write_hdl\":" + String(b.write_handle) + ",";
+    json += "\"notify_hdl\":" + String(b.notify_handle) + ",";
+    json += "\"last_hex\":\"" + b.last_rx_hex + "\",";
     json += "\"cells\":[";
     for (int i = 0; i < b.cell_count && i < 32; i++) {
         if (i > 0) json += ",";
@@ -996,10 +1003,25 @@ void handleBmsTelemetry() {
     json += "\"temp_sensor2\":" + String(b.temp_sensor2, 1) + ",";
     json += "\"pack_voltage\":" + String(b.pack_voltage, 2) + ",";
     json += "\"balancing\":" + String(b.balancing ? "true" : "false") + ",";
+    json += "\"rx_packets\":" + String(b.rx_packet_count) + ",";
+    json += "\"rx_bytes\":" + String(b.rx_byte_count) + ",";
+    json += "\"tx_cmds\":" + String(b.tx_cmd_count) + ",";
+    json += "\"write_hdl\":" + String(b.write_handle) + ",";
+    json += "\"notify_hdl\":" + String(b.notify_handle) + ",";
+    json += "\"last_hex\":\"" + b.last_rx_hex + "\",";
+    String escDebug = b.debug_info; escDebug.replace("\"", "\\\"");
+    json += "\"debug\":\"" + escDebug + "\",";
     json += "\"cells\":[";
     for (int i = 0; i < b.cell_count && i < 32; i++) {
         if (i > 0) json += ",";
         json += String(b.cell_voltages[i], 3);
+    }
+    json += "],";
+    json += "\"logs\":[";
+    for (size_t i = 0; i < b.logs.size(); i++) {
+        if (i > 0) json += ",";
+        String escL = b.logs[i]; escL.replace("\"", "\\\"");
+        json += "\"" + escL + "\"";
     }
     json += "]}";
     server.send(200, "application/json", json);
@@ -1118,19 +1140,23 @@ void setup() {
     }, []() {
         HTTPUpload& upload = server.upload();
         if (upload.status == UPLOAD_FILE_START) {
+            isOtaUpdating = true;
             Serial.printf("[Web OTA] Starting Update: %s\n", upload.filename.c_str());
             if (!Update.begin(UPDATE_SIZE_UNKNOWN)) {
                 Update.printError(Serial);
+                isOtaUpdating = false;
             }
         } else if (upload.status == UPLOAD_FILE_WRITE) {
             if (Update.write(upload.buf, upload.currentSize) != upload.currentSize) {
                 Update.printError(Serial);
+                isOtaUpdating = false;
             }
         } else if (upload.status == UPLOAD_FILE_END) {
             if (Update.end(true)) {
                 Serial.printf("[Web OTA] Update Success: %u bytes! Rebooting...\n", upload.totalSize);
             } else {
                 Update.printError(Serial);
+                isOtaUpdating = false;
             }
         }
     });
@@ -1144,6 +1170,12 @@ void setup() {
 
 void loop() {
     server.handleClient();
+
+    // While receiving a wireless OTA upload, dedicate 100% CPU to the web server
+    if (isOtaUpdating) {
+        delay(1);
+        return;
+    }
 
     // Background BLE state machine for JK-BMS
     JkBmsManager::getInstance().loop();
