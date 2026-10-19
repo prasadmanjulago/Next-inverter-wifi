@@ -7,10 +7,13 @@
 #include <HTTPClient.h>
 #include <WiFiClientSecure.h>
 #include <HTTPUpdate.h>
+#include <nvs_flash.h>
 #include "inverter_protocol.h"
 #include "web_dashboard.h"
+#include "inverter_diagnostics_page.h"
+#include "jk_bms_ble.h"
 
-#define FIRMWARE_VERSION "1.0.3"
+#define FIRMWARE_VERSION "1.1.7"
 
 // Hardware Serial 2 Pins for Inverter RS-232
 #define INVERTER_RX_PIN 16
@@ -22,6 +25,7 @@ int currentRxPin = 16;
 int currentTxPin = 17;
 bool isPinsSwapped = false;
 bool autoBaudEnabled = true;
+bool isMacroExecuting = false;
 
 const char *AP_SSID = "NextInverter-WIFI";
 
@@ -75,6 +79,16 @@ void startFallbackAP() {
     Serial.printf("[Wi-Fi AP] IP Address: http://%s\n", WiFi.softAPIP().toString().c_str());
 }
 
+bool isVersionNewer(const String &remote, const String &local) {
+    int rMajor = 0, rMinor = 0, rPatch = 0;
+    int lMajor = 0, lMinor = 0, lPatch = 0;
+    sscanf(remote.c_str(), "%d.%d.%d", &rMajor, &rMinor, &rPatch);
+    sscanf(local.c_str(), "%d.%d.%d", &lMajor, &lMinor, &lPatch);
+    if (rMajor != lMajor) return rMajor > lMajor;
+    if (rMinor != lMinor) return rMinor > lMinor;
+    return rPatch > lPatch;
+}
+
 void checkGitHubUpdate() {
     if (WiFi.status() != WL_CONNECTED || githubRepo.length() == 0) return;
 
@@ -112,7 +126,7 @@ void checkGitHubUpdate() {
                 if (q1 >= 0 && q2 > q1) updateNotes = payload.substring(q1 + 1, q2);
             }
 
-            if (latestVersion.length() > 0 && latestVersion != FIRMWARE_VERSION) {
+            if (latestVersion.length() > 0 && isVersionNewer(latestVersion, FIRMWARE_VERSION)) {
                 updateAvailable = true;
                 Serial.printf("[OTA] Update Available! v%s (Current: v%s)\n", latestVersion.c_str(), FIRMWARE_VERSION);
             } else {
@@ -229,6 +243,7 @@ void handleTelemetryApi() {
     json += "\"mode\":\"" + telemetry.mode_string + "\",";
     json += "\"grid_voltage\":" + String(telemetry.grid_voltage, 1) + ",";
     json += "\"grid_frequency\":" + String(telemetry.grid_frequency, 1) + ",";
+    json += "\"grid_watts\":" + String(telemetry.grid_watts, 1) + ",";
     json += "\"ac_output_voltage\":" + String(telemetry.ac_output_voltage, 1) + ",";
     json += "\"ac_output_frequency\":" + String(telemetry.ac_output_frequency, 1) + ",";
     json += "\"ac_output_va\":" + String(telemetry.ac_output_va) + ",";
@@ -281,7 +296,36 @@ void handleTelemetryApi() {
     json += "\"current_baud\":" + String(telemetry.current_baud) + ",";
     json += "\"rx_pin\":" + String(telemetry.rx_pin) + ",";
     json += "\"tx_pin\":" + String(telemetry.tx_pin) + ",";
-    json += "\"pins_swapped\":" + String(telemetry.pins_swapped ? "true" : "false");
+    json += "\"pins_swapped\":" + String(telemetry.pins_swapped ? "true" : "false") + ",";
+
+    // JK-BMS Bluetooth Telemetry Summary
+    const auto& b = JkBmsManager::getInstance().data;
+    json += "\"bms\":{";
+    json += "\"enabled\":" + String(b.enabled ? "true" : "false") + ",";
+    json += "\"connected\":" + String(b.connected ? "true" : "false") + ",";
+    json += "\"valid\":" + String(b.data_valid ? "true" : "false") + ",";
+    json += "\"name\":\"" + b.device_name + "\",";
+    json += "\"mac\":\"" + b.device_mac + "\",";
+    json += "\"rssi\":" + String(b.rssi) + ",";
+    json += "\"status\":\"" + b.last_status + "\",";
+    json += "\"cell_count\":" + String(b.cell_count) + ",";
+    json += "\"max_cell_idx\":" + String(b.max_cell_idx) + ",";
+    json += "\"max_cell_v\":" + String(b.max_cell_v, 3) + ",";
+    json += "\"min_cell_idx\":" + String(b.min_cell_idx) + ",";
+    json += "\"min_cell_v\":" + String(b.min_cell_v, 3) + ",";
+    json += "\"delta_mv\":" + String(b.delta_mv, 1) + ",";
+    json += "\"avg_cell_v\":" + String(b.avg_cell_v, 3) + ",";
+    json += "\"temp_mos\":" + String(b.temp_mos, 1) + ",";
+    json += "\"temp_sensor1\":" + String(b.temp_sensor1, 1) + ",";
+    json += "\"temp_sensor2\":" + String(b.temp_sensor2, 1) + ",";
+    json += "\"pack_voltage\":" + String(b.pack_voltage, 2) + ",";
+    json += "\"balancing\":" + String(b.balancing ? "true" : "false") + ",";
+    json += "\"cells\":[";
+    for (int i = 0; i < b.cell_count && i < 32; i++) {
+        if (i > 0) json += ",";
+        json += String(b.cell_voltages[i], 3);
+    }
+    json += "]}";
     json += "}";
     server.send(200, "application/json", json);
 }
@@ -340,8 +384,25 @@ void handleSetPriority() {
     server.send(200, "text/plain", "Sent " + String(cmd) + " to Inverter!");
 }
 
+void drainSerial2(unsigned long quietMs = 120, unsigned long maxWaitMs = 1200) {
+    unsigned long start = millis();
+    unsigned long lastByte = millis();
+    while (millis() - start < maxWaitMs) {
+        if (Serial2.available()) {
+            Serial2.read();
+            lastByte = millis();
+        } else {
+            if (millis() - lastByte >= quietMs) {
+                break;
+            }
+        }
+        delay(2);
+    }
+}
+
 String queryInverter(const char *cmd, unsigned long timeoutMs) {
-    while (Serial2.available()) Serial2.read();
+    // 1. Drain serial line until it has been quiet for at least 100ms
+    drainSerial2(100, 1000);
 
     telemetry.last_tx_cmd = String(cmd);
     VoltronicProtocol::sendCommand(Serial2, cmd);
@@ -349,7 +410,9 @@ String queryInverter(const char *cmd, unsigned long timeoutMs) {
 
     String resp = "";
     String hexDump = "";
+    bool foundStart = false;
     unsigned long start = millis();
+
     while (millis() - start < timeoutMs) {
         server.handleClient();
         if (Serial2.available()) {
@@ -359,6 +422,16 @@ String queryInverter(const char *cmd, unsigned long timeoutMs) {
             char hBuf[6];
             snprintf(hBuf, sizeof(hBuf), "%02X ", (uint8_t)c);
             hexDump += hBuf;
+
+            // Voltronic protocol responses strictly start with '('
+            if (!foundStart) {
+                if (c == '(') {
+                    foundStart = true;
+                    resp += c;
+                }
+                // Discard any residual bytes before '('
+                continue;
+            }
 
             if (c >= 32 && c <= 126) {
                 resp += c;
@@ -395,7 +468,6 @@ void pollInverter() {
     if (qpigsResp.length() > 0 && qpigsResp.indexOf('(') >= 0) {
         Serial.printf("[Inverter RX QPIGS] %s\n", qpigsResp.c_str());
         VoltronicProtocol::parseQPIGS(qpigsResp, telemetry);
-        tbAccumulator.add(telemetry); // Accumulate sample for ThingsBoard interval averaging
         autoBaudEnabled = false; // Lock in working baud rate!
     } else {
         if (millis() - telemetry.last_update > 8000) {
@@ -408,6 +480,7 @@ void pollInverter() {
         if (qmodResp.length() > 0 && qmodResp.indexOf('(') >= 0) {
             VoltronicProtocol::parseQMOD(qmodResp, telemetry);
         }
+        tbAccumulator.add(telemetry); // Accumulate sample after both QPIGS & QMOD are updated
     }
 }
 
@@ -441,11 +514,7 @@ void sendThingsBoardTelemetry() {
     // Positive (+) when powering load, negative (-) when charging
     float avgBatPwrW = (avgBatDisA > 0) ? ((float)avgBatDisA * avgBatV) : ((avgBatChgA > 0) ? (-(float)avgBatChgA * avgBatV) : 0.0);
 
-    float avgGridW = 0.0;
-    if (telemetry.mode_char == 'L' || telemetry.grid_charging) {
-        float demand = (float)avgAcOutW + avgBatChgW;
-        avgGridW = (demand > avgPvW) ? (demand - avgPvW) : 0.0;
-    }
+    float avgGridW = tbAccumulator.sum_grid_watts / n;
 
     // Reset accumulator for next interval
     tbAccumulator.reset();
@@ -560,6 +629,381 @@ void handleTbConfigPost() {
                   tbEnabled ? "YES" : "NO", tbServer.c_str(), tbInterval);
 }
 
+// -------------------------------------------------------------
+// Inverter Mode Macros Engine & Preset Handlers
+// -------------------------------------------------------------
+const char DEFAULT_MACROS_JSON[] = "["
+  "{\"id\":\"m_solar\",\"name\":\"☀️ Day Solar Maximizer\","
+  "\"desc\":\"Solar First, Battery Second, Utility Grid Last (SBU Priority) • Only Solar Charging (OSO - 100% Free Solar) • Max Total Charge: 30 Amps\","
+  "\"cmds\":[\"POP02\",\"PCP02\",\"MNCHGC030\"]},"
+  "{\"id\":\"m_night\",\"name\":\"🌙 Night Battery Economy\","
+  "\"desc\":\"Solar First, Battery Second, Utility Grid Last (SBU Priority) • Solar Energy First (CSO) • Max Total Charge: 20 Amps\","
+  "\"cmds\":[\"POP02\",\"PCP03\",\"MNCHGC020\"]},"
+  "{\"id\":\"m_grid\",\"name\":\"⚡ Emergency Grid Fast Charge\","
+  "\"desc\":\"Utility Grid First (USB Mode) • Solar & Utility Simultaneous Charging (SNU) • Max Total Charge: 30 Amps • Max Utility Charge: 30 Amps\","
+  "\"cmds\":[\"POP00\",\"PCP01\",\"MNCHGC030\",\"MUCHGC030\"]}"
+"]";
+
+void handleGetMacros() {
+    preferences.begin("macros", false);
+    String macrosJson = preferences.getString("data", "");
+    if (macrosJson.length() < 5) {
+        macrosJson = String(DEFAULT_MACROS_JSON);
+        preferences.putString("data", macrosJson);
+    }
+    preferences.end();
+    server.send(200, "application/json", macrosJson);
+}
+
+void handleSaveMacrosList() {
+    if (server.hasArg("plain")) {
+        String data = server.arg("plain");
+        data.trim();
+        if (data.startsWith("[") && data.endsWith("]")) {
+            preferences.begin("macros", false);
+            preferences.putString("data", data);
+            preferences.end();
+            Serial.printf("[Macros] Saved macro presets (%d bytes)\n", data.length());
+            server.send(200, "application/json", data);
+            return;
+        }
+    }
+    server.send(400, "text/plain", "Invalid JSON array");
+}
+
+void handleRunMacro() {
+    if (!server.hasArg("cmds")) {
+        server.send(400, "text/plain", "Missing cmds parameter");
+        return;
+    }
+
+    String cmdsParam = server.arg("cmds");
+    std::vector<String> cmdList;
+
+    int start = 0;
+    for (int i = 0; i <= cmdsParam.length(); i++) {
+        if (i == cmdsParam.length() || cmdsParam[i] == ',') {
+            String c = cmdsParam.substring(start, i);
+            c.trim();
+            c.replace("\"", "");
+            c.replace("[", "");
+            c.replace("]", "");
+            if (c.length() > 0) {
+                cmdList.push_back(c);
+            }
+            start = i + 1;
+        }
+    }
+
+    if (cmdList.empty()) {
+        server.send(400, "text/plain", "No valid commands to execute");
+        return;
+    }
+
+    isMacroExecuting = true;
+    lastPollTime = millis() + 10000; // Suspend background telemetry polling for 10 seconds
+    drainSerial2(150, 1500); // Drain any in-flight packets completely
+
+    Serial.printf("[Macro Engine] Running %d macro commands...\n", (int)cmdList.size());
+
+    String resultsJson = "{\"success\":true,\"results\":[";
+    bool allOk = true;
+
+    for (size_t i = 0; i < cmdList.size(); i++) {
+        String cmd = cmdList[i];
+        Serial.printf("[Macro Engine] [%d/%d] Sending: %s\n", (int)(i + 1), (int)cmdList.size(), cmd.c_str());
+
+        // Drain serial line before sending command to prevent collision
+        drainSerial2(100, 500);
+
+        String resp = queryInverter(cmd.c_str(), 1500);
+        bool ack = (resp.indexOf("ACK") >= 0);
+
+        // Automatic retry once if first attempt didn't receive ACK
+        if (!ack) {
+            Serial.printf("[Macro Engine] Retry sending: %s\n", cmd.c_str());
+            delay(500);
+            drainSerial2(150, 1000);
+            resp = queryInverter(cmd.c_str(), 1500);
+            ack = (resp.indexOf("ACK") >= 0);
+        }
+
+        if (!ack) allOk = false;
+
+        if (i > 0) resultsJson += ",";
+        String cleanResp = resp;
+        cleanResp.replace("\"", "\\\"");
+        cleanResp.replace("\r", "");
+        cleanResp.replace("\n", "");
+        resultsJson += "{\"cmd\":\"" + cmd + "\",\"ack\":" + String(ack ? "true" : "false") + ",\"resp\":\"" + cleanResp + "\"}";
+
+        // If command switched Output Source Priority (POP), give the mechanical contactor time to settle
+        int settleMs = cmd.startsWith("POP") ? 1000 : 500;
+        for (int k = 0; k < settleMs / 50; k++) {
+            server.handleClient();
+            delay(50);
+        }
+    }
+
+    resultsJson += "],\"all_ack\":" + String(allOk ? "true" : "false") + "}";
+
+    // Send HTTP response immediately so the browser receives 200 OK without timeout
+    server.send(200, "application/json", resultsJson);
+
+    // Resume polling naturally on next loop cycle
+    isMacroExecuting = false;
+    lastPollTime = millis();
+}
+
+// -------------------------------------------------------------
+// Inverter Live Settings & Parameter Diagnostics Handlers
+// -------------------------------------------------------------
+void handleSettingsPage() {
+    server.send(200, "text/html", INVERTER_DIAGNOSTICS_HTML);
+}
+
+void handleGetInverterSettings() {
+    isMacroExecuting = true;
+    lastPollTime = millis() + 10000;
+    drainSerial2(150, 1500);
+
+    String qpiri = queryInverter("QPIRI", 1500);
+    if (qpiri.length() < 10) {
+        delay(250);
+        drainSerial2(100, 500);
+        qpiri = queryInverter("QPIRI", 1500);
+    }
+    delay(100);
+    drainSerial2(100, 500);
+    String qflag = queryInverter("QFLAG", 1500);
+    if (qflag.length() < 5) {
+        delay(250);
+        drainSerial2(100, 500);
+        qflag = queryInverter("QFLAG", 1500);
+    }
+    delay(100);
+    drainSerial2(100, 500);
+    String qmod = queryInverter("QMOD", 1000);
+
+    isMacroExecuting = false;
+    lastPollTime = millis();
+
+    // Parse QPIRI
+    std::vector<String> tokens;
+    int pStart = qpiri.indexOf('(');
+    if (pStart >= 0) {
+        String payload = qpiri.substring(pStart + 1);
+        payload.trim();
+        int lastIdx = 0;
+        for (int i = 0; i <= payload.length(); i++) {
+            if (i == payload.length() || payload[i] == ' ') {
+                if (i > lastIdx) {
+                    tokens.push_back(payload.substring(lastIdx, i));
+                }
+                lastIdx = i + 1;
+            }
+        }
+    }
+
+    String json = "{";
+    json += "\"valid\":" + String(tokens.size() >= 18 ? "true" : "false") + ",";
+    
+    String cleanQpiri = qpiri; cleanQpiri.replace("\"", "\\\""); cleanQpiri.replace("\r", ""); cleanQpiri.replace("\n", "");
+    String cleanQflag = qflag; cleanQflag.replace("\"", "\\\""); cleanQflag.replace("\r", ""); cleanQflag.replace("\n", "");
+    String cleanQmod = qmod; cleanQmod.replace("\"", "\\\""); cleanQmod.replace("\r", ""); cleanQmod.replace("\n", "");
+    json += "\"raw_qpiri\":\"" + cleanQpiri + "\",";
+    json += "\"raw_qflag\":\"" + cleanQflag + "\",";
+    json += "\"raw_qmod\":\"" + cleanQmod + "\",";
+    json += "\"mode\":\"" + telemetry.mode_string + "\",";
+
+    json += "\"settings\":{";
+    if (tokens.size() >= 18) {
+        // Prog 01: Output Priority (tokens[16])
+        String p01 = tokens[16];
+        String p01Name = (p01 == "0" ? "USB (Utility First)" : (p01 == "1" ? "SUB (Solar First Blending)" : (p01 == "2" ? "SBU (Solar First Battery Second)" : p01)));
+        String p01Cmd = "POP0" + p01;
+        json += "\"out_priority\":{\"code\":\"" + p01 + "\",\"name\":\"" + p01Name + "\",\"cmd\":\"" + p01Cmd + "\"},";
+
+        // Prog 16: Charger Priority (tokens[17])
+        String p16 = tokens[17];
+        // On this inverter firmware: 2 = OSO, 1 = SNU, 3 = CSO, 0/00 = USB
+        String p16Name = (p16 == "2" ? "PCP02 (OSO on Inverter LCD)" : (p16 == "1" ? "PCP01 (SNU on Inverter LCD)" : (p16 == "3" ? "PCP03 (CSO on Inverter LCD)" : "PCP00 (Utility First)")));
+        String p16Cmd = (p16 == "2" ? "PCP02" : (p16 == "1" ? "PCP01" : (p16 == "3" ? "PCP03" : "PCP00")));
+        json += "\"chg_priority\":{\"code\":\"" + p16 + "\",\"name\":\"" + p16Name + "\",\"cmd\":\"" + p16Cmd + "\"},";
+
+        // Prog 03: AC Range (tokens[15])
+        String p03 = tokens[15];
+        json += "\"ac_in_range\":{\"code\":\"" + p03 + "\",\"cmd\":\"" + (p03 == "1" ? "PGR01" : "PGR00") + "\"},";
+
+        // Prog 02: Max Total Charge Current (tokens[14])
+        int p02 = tokens[14].toInt();
+        char buf02[16]; snprintf(buf02, sizeof(buf02), "MNCHGC%03d", p02);
+        json += "\"max_chg_curr\":{\"value\":" + String(p02) + ",\"cmd\":\"" + String(buf02) + "\"},";
+
+        // Prog 11: Max Utility Charge Current (tokens[13])
+        int p11 = tokens[13].toInt();
+        char buf11[16]; snprintf(buf11, sizeof(buf11), "MUCHGC%03d", p11);
+        json += "\"max_util_curr\":{\"value\":" + String(p11) + ",\"cmd\":\"" + String(buf11) + "\"},";
+
+        // Prog 05: Battery Type (tokens[12])
+        String p05 = tokens[12];
+        String p05Name = (p05 == "0" ? "AGM (Lead-Acid)" : (p05 == "1" ? "Flooded" : "User-Defined (USE)"));
+        json += "\"battery_type\":{\"code\":\"" + p05 + "\",\"name\":\"" + p05Name + "\",\"cmd\":\"PBT0" + p05 + "\"},";
+
+        // Prog 26: Bulk Voltage (tokens[10])
+        float p26 = tokens[10].toFloat();
+        json += "\"bulk_voltage\":{\"value\":" + String(p26, 1) + "},";
+
+        // Prog 27: Float Voltage (tokens[11])
+        float p27 = tokens[11].toFloat();
+        json += "\"float_voltage\":{\"value\":" + String(p27, 1) + "},";
+
+        // Prog 12: Back to Grid in SBU / SUB (tokens[8], range 42.0V - 51.0V)
+        float p12 = tokens[8].toFloat();
+        json += "\"back_to_grid\":{\"value\":" + String(p12, 1) + "},";
+
+        // Prog 29: Low DC Cutoff (tokens[9], range 40.0V - 48.0V)
+        float p29 = tokens[9].toFloat();
+        json += "\"cutoff_voltage\":{\"value\":" + String(p29, 1) + "},";
+
+        // Prog 13: Back to Battery in SBU / SUB (tokens[22] if available, range 48.0V - 58.0V)
+        float p13 = (tokens.size() > 22) ? tokens[22].toFloat() : 51.0f;
+        json += "\"back_to_bat\":{\"value\":" + String(p13, 1) + "},";
+    }
+
+    // Parse QFLAG for Prog 18 (Buzzer) and Prog 23 (Overload Bypass)
+    int eIdx = qflag.indexOf('E');
+    int dIdx = qflag.indexOf('D');
+    String enabledFlags = (eIdx >= 0) ? ((dIdx > eIdx) ? qflag.substring(eIdx + 1, dIdx) : qflag.substring(eIdx + 1)) : "";
+    bool buzzerOn = (enabledFlags.indexOf('a') >= 0);
+    bool bypassOn = (enabledFlags.indexOf('b') >= 0);
+
+    json += "\"buzzer\":{\"enabled\":" + String(buzzerOn ? "true" : "false") + "},";
+    json += "\"overload_bypass\":{\"enabled\":" + String(bypassOn ? "true" : "false") + "}";
+
+    json += "}}";
+    server.send(200, "application/json", json);
+}
+
+void handleSetInverterParam() {
+    if (!server.hasArg("cmd")) {
+        server.send(400, "text/plain", "Missing cmd parameter");
+        return;
+    }
+    String cmd = server.arg("cmd");
+    cmd.trim();
+    if (cmd.length() == 0) {
+        server.send(400, "text/plain", "Empty cmd");
+        return;
+    }
+
+    isMacroExecuting = true;
+    lastPollTime = millis() + 10000;
+    drainSerial2(100, 500);
+
+    Serial.printf("[Inverter Param Set] Sending command: %s\n", cmd.c_str());
+    String resp = queryInverter(cmd.c_str(), 1500);
+    bool ack = (resp.indexOf("ACK") >= 0);
+
+    if (!ack) {
+        delay(400);
+        drainSerial2(100, 500);
+        resp = queryInverter(cmd.c_str(), 1500);
+        ack = (resp.indexOf("ACK") >= 0);
+    }
+
+    int settleMs = cmd.startsWith("POP") ? 1000 : 500;
+    for (int k = 0; k < settleMs / 50; k++) {
+        server.handleClient();
+        delay(50);
+    }
+
+    isMacroExecuting = false;
+    lastPollTime = millis();
+
+    String cleanResp = resp;
+    cleanResp.replace("\"", "\\\"");
+    cleanResp.replace("\r", "");
+    cleanResp.replace("\n", "");
+
+    String json = "{\"success\":true,\"cmd\":\"" + cmd + "\",\"ack\":" + String(ack ? "true" : "false") + ",\"resp\":\"" + cleanResp + "\"}";
+    server.send(200, "application/json", json);
+}
+
+// -------------------------------------------------------------
+// JK-BMS Bluetooth Low Energy (BLE) Handlers
+// -------------------------------------------------------------
+void handleBmsScan() {
+    JkBmsManager::getInstance().startScan(4);
+    String json = "[";
+    for (size_t i = 0; i < JkBmsManager::getInstance().scanResults.size(); i++) {
+        const auto& d = JkBmsManager::getInstance().scanResults[i];
+        if (i > 0) json += ",";
+        String escName = d.name;
+        escName.replace("\"", "\\\"");
+        json += "{\"name\":\"" + escName + "\",\"mac\":\"" + d.mac + "\",\"rssi\":" + String(d.rssi) + ",\"is_jk\":" + String(d.is_jk ? "true" : "false") + "}";
+    }
+    json += "]";
+    server.send(200, "application/json", json);
+}
+
+void handleBmsConfigGet() {
+    const auto& b = JkBmsManager::getInstance().data;
+    String json = "{";
+    json += "\"enabled\":" + String(b.enabled ? "true" : "false") + ",";
+    json += "\"mac\":\"" + b.device_mac + "\",";
+    json += "\"name\":\"" + b.device_name + "\",";
+    json += "\"pin\":\"" + b.pin + "\",";
+    json += "\"connected\":" + String(b.connected ? "true" : "false") + ",";
+    json += "\"status\":\"" + b.last_status + "\"";
+    json += "}";
+    server.send(200, "application/json", json);
+}
+
+void handleBmsConfigPost() {
+    bool enabled = (server.arg("enabled") == "true" || server.arg("enabled") == "1");
+    String mac = server.hasArg("mac") ? server.arg("mac") : "";
+    mac.trim();
+    mac.toUpperCase();
+    String name = server.hasArg("name") ? server.arg("name") : "";
+    name.trim();
+    String pin = server.hasArg("pin") ? server.arg("pin") : "1234";
+    pin.trim();
+
+    JkBmsManager::getInstance().saveConfig(enabled, mac, name, pin);
+    server.send(200, "text/plain", "JK-BMS settings saved successfully!");
+}
+
+void handleBmsTelemetry() {
+    const auto& b = JkBmsManager::getInstance().data;
+    String json = "{";
+    json += "\"enabled\":" + String(b.enabled ? "true" : "false") + ",";
+    json += "\"connected\":" + String(b.connected ? "true" : "false") + ",";
+    json += "\"valid\":" + String(b.data_valid ? "true" : "false") + ",";
+    json += "\"name\":\"" + b.device_name + "\",";
+    json += "\"mac\":\"" + b.device_mac + "\",";
+    json += "\"rssi\":" + String(b.rssi) + ",";
+    json += "\"status\":\"" + b.last_status + "\",";
+    json += "\"cell_count\":" + String(b.cell_count) + ",";
+    json += "\"max_cell_idx\":" + String(b.max_cell_idx) + ",";
+    json += "\"max_cell_v\":" + String(b.max_cell_v, 3) + ",";
+    json += "\"min_cell_idx\":" + String(b.min_cell_idx) + ",";
+    json += "\"min_cell_v\":" + String(b.min_cell_v, 3) + ",";
+    json += "\"delta_mv\":" + String(b.delta_mv, 1) + ",";
+    json += "\"avg_cell_v\":" + String(b.avg_cell_v, 3) + ",";
+    json += "\"temp_mos\":" + String(b.temp_mos, 1) + ",";
+    json += "\"temp_sensor1\":" + String(b.temp_sensor1, 1) + ",";
+    json += "\"temp_sensor2\":" + String(b.temp_sensor2, 1) + ",";
+    json += "\"pack_voltage\":" + String(b.pack_voltage, 2) + ",";
+    json += "\"balancing\":" + String(b.balancing ? "true" : "false") + ",";
+    json += "\"cells\":[";
+    for (int i = 0; i < b.cell_count && i < 32; i++) {
+        if (i > 0) json += ",";
+        json += String(b.cell_voltages[i], 3);
+    }
+    json += "]}";
+    server.send(200, "application/json", json);
+}
 
 void setup() {
     Serial.begin(115200);
@@ -569,25 +1013,32 @@ void setup() {
     Serial.printf("  Firmware: v%s (OTA Enabled)\n", FIRMWARE_VERSION);
     Serial.println("==========================================");
 
+    // Initialize NVS cleanly
+    esp_err_t nvsErr = nvs_flash_init();
+    if (nvsErr == ESP_ERR_NVS_NO_FREE_PAGES || nvsErr == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        nvs_flash_erase();
+        nvs_flash_init();
+    }
+
     // Initialize Inverter Serial2
     initSerial2(INVERTER_BAUD, INVERTER_RX_PIN, INVERTER_TX_PIN);
 
     // Read stored Wi-Fi credentials
-    preferences.begin("wifi", true);
-    String ssid = preferences.getString("ssid", "");
-    String pass = preferences.getString("password", "");
+    preferences.begin("wifi", false);
+    String ssid = preferences.getString("ssid", "Easytech Solutions");
+    String pass = preferences.getString("password", "ilen6039");
     preferences.end();
 
     // Read stored GitHub repository
-    preferences.begin("ota", true);
+    preferences.begin("ota", false);
     githubRepo = preferences.getString("repo", "prasadmanjulago/Next-inverter-wifi");
     preferences.end();
 
     // Read stored ThingsBoard preferences
-    preferences.begin("tb", true);
-    tbEnabled = preferences.getBool("enabled", false);
-    tbServer = preferences.getString("server", "https://thingsboard.cloud");
-    tbToken = preferences.getString("token", "");
+    preferences.begin("tb", false);
+    tbEnabled = preferences.getBool("enabled", true);
+    tbServer = preferences.getString("server", "https://eu.thingsboard.cloud");
+    tbToken = preferences.getString("token", "QJJXWvLJZ4GAECdglKb3");
     tbInterval = preferences.getInt("interval", 10);
     if (tbInterval < 5) tbInterval = 10;
     preferences.end();
@@ -642,6 +1093,21 @@ void setup() {
     server.on("/api/send_cmd", HTTP_POST, handleSendCmd);
     server.on("/api/tb_config", HTTP_GET, handleTbConfigGet);
     server.on("/api/tb_config", HTTP_POST, handleTbConfigPost);
+    server.on("/api/macros", HTTP_GET, handleGetMacros);
+    server.on("/api/save_macros", HTTP_POST, handleSaveMacrosList);
+    server.on("/api/run_macro", HTTP_POST, handleRunMacro);
+
+    // Inverter Live Parameter Diagnostics & Settings Manager
+    server.on("/settings", handleSettingsPage);
+    server.on("/diagnostics", handleSettingsPage);
+    server.on("/api/inverter_settings", handleGetInverterSettings);
+    server.on("/api/set_inverter_param", HTTP_POST, handleSetInverterParam);
+
+    // JK-BMS Bluetooth API
+    server.on("/api/bms_scan", handleBmsScan);
+    server.on("/api/bms_config", HTTP_GET, handleBmsConfigGet);
+    server.on("/api/bms_config", HTTP_POST, handleBmsConfigPost);
+    server.on("/api/bms_telemetry", handleBmsTelemetry);
 
     // Browser Direct Web OTA (/update)
     server.on("/update", HTTP_POST, []() {
@@ -671,12 +1137,18 @@ void setup() {
 
     server.begin();
     Serial.println("[Web Server] Active on port 80 (Web OTA endpoint: /update)");
+
+    // Initialize JK-BMS BLE
+    JkBmsManager::getInstance().init();
 }
 
 void loop() {
     server.handleClient();
 
-    if (millis() - lastPollTime >= POLL_INTERVAL) {
+    // Background BLE state machine for JK-BMS
+    JkBmsManager::getInstance().loop();
+
+    if (!isMacroExecuting && millis() - lastPollTime >= POLL_INTERVAL) {
         lastPollTime = millis();
         pollInverter();
     }

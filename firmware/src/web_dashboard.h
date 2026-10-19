@@ -24,22 +24,74 @@ const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    background: #0f172a;
+    background: #0b1324;
     min-height: 100vh;
     display: flex;
     justify-content: center;
-    align-items: center;
-    padding: 12px;
+    align-items: flex-start;
+    padding: 16px 12px;
+  }
+  .page-wrapper {
+    width: 100%;
+    max-width: 440px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    margin: 0 auto;
+    transition: max-width 0.25s ease;
+  }
+
+  /* Tablet & Medium Screen (860px - 1239px): 2 Columns (Card 1 & 2 side-by-side, Card 3 wide below) */
+  @media (min-width: 860px) {
+    body {
+      padding: 24px 20px;
+    }
+    .page-wrapper {
+      max-width: 1080px;
+      display: grid;
+      grid-template-columns: 420px 1fr;
+      align-items: start;
+      gap: 20px;
+    }
+    .app-frame {
+      grid-column: 1;
+    }
+    .macro-card {
+      grid-column: 2;
+    }
+    .weather-card {
+      grid-column: 1 / -1;
+    }
+  }
+
+  /* Large Desktop & Widescreen (>= 1240px): All 3 Cards side-by-side! */
+  @media (min-width: 1240px) {
+    .page-wrapper {
+      max-width: 1540px;
+      display: grid;
+      grid-template-columns: 420px 380px minmax(460px, 1fr);
+      align-items: start;
+      gap: 22px;
+    }
+    .app-frame {
+      grid-column: 1;
+    }
+    .macro-card {
+      grid-column: 2;
+    }
+    .weather-card {
+      grid-column: 3;
+    }
   }
   .app-frame {
     width: 100%;
-    max-width: 420px;
     background: linear-gradient(180deg, var(--bg-top) 0%, var(--bg-mid) 45%, var(--bg-bot) 100%);
     border-radius: 28px;
     box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5);
     overflow: hidden;
     position: relative;
     padding: 18px 16px 16px 16px;
+    box-sizing: border-box;
   }
 
   /* OTA Banner */
@@ -140,6 +192,9 @@ const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
     stroke-linejoin: round;
     stroke-dasharray: 6 14;
     animation: pulseFlow 1s linear infinite;
+  }
+  .active-pulse.reverse {
+    animation-direction: reverse;
   }
   @keyframes pulseFlow {
     to { stroke-dashoffset: -20; }
@@ -339,6 +394,365 @@ const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
     cursor: pointer;
   }
 
+  /* Standalone Inverter Mode Macros Card (Card 2) */
+  .macro-card {
+    background: #ffffff;
+    border-radius: 26px;
+    padding: 18px 16px 16px 16px;
+    box-shadow: 0 20px 45px -10px rgba(0,0,0,0.45);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    width: 100%;
+    box-sizing: border-box;
+  }
+  .macro-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+  }
+  .macro-title {
+    font-size: 0.92rem;
+    font-weight: 700;
+    color: #0f172a;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .macro-subtitle {
+    font-size: 0.68rem;
+    color: #64748b;
+    margin-top: 1px;
+    font-weight: 500;
+  }
+  .btn-create-macro {
+    background: linear-gradient(135deg, #2563eb, #1d4ed8);
+    color: #ffffff;
+    border: none;
+    padding: 6px 12px;
+    border-radius: 8px;
+    font-size: 0.74rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s;
+    box-shadow: 0 2px 6px rgba(37,99,235,0.25);
+  }
+  .btn-create-macro:hover {
+    background: linear-gradient(135deg, #1d4ed8, #1e40af);
+    transform: translateY(-1px);
+  }
+  .macro-status-banner {
+    display: none;
+    padding: 8px 12px;
+    border-radius: 10px;
+    font-size: 0.74rem;
+    font-weight: 600;
+    margin-bottom: 10px;
+    line-height: 1.35;
+  }
+  .macro-status-banner.running {
+    display: block;
+    background: #eff6ff;
+    color: #1e40af;
+    border: 1px solid #bfdbfe;
+  }
+  .macro-status-banner.success {
+    display: block;
+    background: #ecfdf5;
+    color: #065f46;
+    border: 1px solid #a7f3d0;
+  }
+  .macro-status-banner.error {
+    display: block;
+    background: #fef2f2;
+    color: #991b1b;
+    border: 1px solid #fecaca;
+  }
+  .macros-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .macro-item {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 10px 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    transition: all 0.2s;
+  }
+  .macro-item:hover {
+    border-color: #cbd5e1;
+    background: #f1f5f9;
+  }
+  .macro-info {
+    flex: 1;
+    min-width: 0;
+  }
+  .macro-name {
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: #1e293b;
+    margin-bottom: 3px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .macro-desc {
+    font-size: 0.68rem;
+    color: #64748b;
+    line-height: 1.35;
+    word-break: break-word;
+  }
+  .macro-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+  .btn-apply-macro {
+    background: #059669;
+    color: #ffffff;
+    border: none;
+    padding: 6px 12px;
+    border-radius: 8px;
+    font-size: 0.74rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+    box-shadow: 0 2px 4px rgba(5,150,105,0.2);
+  }
+  .btn-apply-macro:hover {
+    background: #047857;
+  }
+  .btn-apply-macro:disabled {
+    background: #94a3b8;
+    cursor: not-allowed;
+  }
+  .btn-icon-macro {
+    background: #ffffff;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    color: #64748b;
+    padding: 4px 6px;
+    font-size: 0.72rem;
+    cursor: pointer;
+    line-height: 1;
+    transition: all 0.15s;
+  }
+  .btn-icon-macro:hover {
+    background: #e2e8f0;
+    color: #0f172a;
+  }
+
+  /* JK-BMS 14S Battery Monitor Card */
+  .bms-card {
+    background: #ffffff;
+    border-radius: 20px;
+    box-shadow: 0 10px 25px -5px rgba(0,0,0,0.06), 0 8px 10px -6px rgba(0,0,0,0.03);
+    padding: 16px;
+    width: 100%;
+    max-width: 460px;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .bms-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid #f1f5f9;
+    padding-bottom: 8px;
+  }
+  .bms-title {
+    font-size: 0.95rem;
+    font-weight: 800;
+    color: #0f172a;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .bms-subtitle {
+    font-size: 0.7rem;
+    color: #64748b;
+    margin-top: 2px;
+  }
+  .btn-setup-bms {
+    background: #0f172a;
+    color: #ffffff;
+    border: none;
+    padding: 5px 10px;
+    border-radius: 8px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.15s;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .btn-setup-bms:hover {
+    background: #1e293b;
+  }
+  .bms-metrics-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+  }
+  .bms-metric-box {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 7px 4px;
+    text-align: center;
+    transition: all 0.2s;
+  }
+  .bms-metric-label {
+    font-size: 0.58rem;
+    font-weight: 700;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .bms-metric-val {
+    font-size: 0.96rem;
+    font-weight: 800;
+    color: #0f172a;
+    margin: 2px 0;
+  }
+  .bms-metric-sub {
+    font-size: 0.6rem;
+    color: #94a3b8;
+  }
+  .bms-delta-box.balanced {
+    background: #ecfdf5 !important;
+    border-color: #10b981 !important;
+  }
+  .bms-delta-box.balanced .bms-metric-val {
+    color: #059669 !important;
+  }
+  .bms-delta-box.moderate {
+    background: #fffbeb !important;
+    border-color: #f59e0b !important;
+  }
+  .bms-delta-box.moderate .bms-metric-val {
+    color: #d97706 !important;
+  }
+  .bms-delta-box.imbalanced {
+    background: #fef2f2 !important;
+    border-color: #ef4444 !important;
+  }
+  .bms-delta-box.imbalanced .bms-metric-val {
+    color: #dc2626 !important;
+  }
+  .bms-cells-title {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.76rem;
+    font-weight: 700;
+    color: #334155;
+    margin-top: 2px;
+  }
+  .bms-cells-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 6px;
+  }
+  @media (max-width: 480px) {
+    .bms-cells-grid {
+      grid-template-columns: repeat(4, 1fr);
+    }
+    .bms-metrics-row {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+  .bms-cell-box {
+    background: #f8fafc;
+    border: 1.5px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 6px 4px;
+    text-align: center;
+    position: relative;
+    transition: all 0.2s;
+  }
+  .bms-cell-box.highest {
+    background: #eff6ff !important;
+    border-color: #2563eb !important;
+    box-shadow: 0 0 0 2px rgba(37,99,235,0.25);
+  }
+  .bms-cell-box.highest .bms-cell-volt {
+    color: #1d4ed8 !important;
+    font-weight: 800;
+  }
+  .bms-cell-box.lowest {
+    background: #fef2f2 !important;
+    border-color: #dc2626 !important;
+    box-shadow: 0 0 0 2px rgba(220,38,38,0.25);
+  }
+  .bms-cell-box.lowest .bms-cell-volt {
+    color: #b91c1c !important;
+    font-weight: 800;
+  }
+  .bms-cell-badge {
+    position: absolute;
+    top: -5px;
+    right: 2px;
+    font-size: 0.5rem;
+    font-weight: 800;
+    padding: 1px 3px;
+    border-radius: 3px;
+    text-transform: uppercase;
+    line-height: 1;
+  }
+  .bms-cell-badge.max {
+    background: #2563eb;
+    color: #ffffff;
+  }
+  .bms-cell-badge.min {
+    background: #dc2626;
+    color: #ffffff;
+  }
+  .bms-cell-label {
+    font-size: 0.62rem;
+    font-weight: 700;
+    color: #64748b;
+    margin-bottom: 2px;
+  }
+  .bms-cell-volt {
+    font-size: 0.84rem;
+    font-weight: 700;
+    color: #0f172a;
+    letter-spacing: -0.3px;
+  }
+  .bms-cell-bar-bg {
+    width: 100%;
+    height: 3px;
+    background: #e2e8f0;
+    border-radius: 2px;
+    margin-top: 4px;
+    overflow: hidden;
+  }
+  .bms-cell-bar-fill {
+    height: 100%;
+    background: #059669;
+    border-radius: 2px;
+    transition: width 0.3s ease;
+  }
+  .bms-cell-box.highest .bms-cell-bar-fill {
+    background: #2563eb;
+  }
+  .bms-cell-box.lowest .bms-cell-bar-fill {
+    background: #dc2626;
+  }
+
   /* Settings & OTA Modal */
   .modal-overlay {
     display: none;
@@ -384,12 +798,372 @@ const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
     color: #475569;
     text-transform: uppercase;
     letter-spacing: 0.5px;
+  /* Card 3: 24h Solar & Weather Forecast Card (Broadcast TV Graphic Theme) */
+  .weather-card {
+    background: #ffffff;
+    border-radius: 26px;
+    padding: 16px 14px 14px 14px;
+    box-shadow: 0 20px 45px -10px rgba(0,0,0,0.45);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    width: 100%;
+    box-sizing: border-box;
+  }
+  
+  /* TV Broadcast Header Bar */
+  .weather-broadcast-header {
+    background: repeating-linear-gradient(-45deg, rgba(255,255,255,0.04), rgba(255,255,255,0.04) 8px, transparent 8px, transparent 16px),
+                linear-gradient(90deg, #162f55 0%, #1c3c6d 50%, #1e4b8a 100%);
+    border-radius: 16px;
+    padding: 10px 14px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+    box-shadow: 0 4px 12px rgba(22,47,85,0.25);
+    color: #ffffff;
+  }
+  .broadcast-station-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .broadcast-channel-title {
+    font-size: 0.88rem;
+    font-weight: 800;
+    letter-spacing: 0.6px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    text-transform: uppercase;
+  }
+  .broadcast-live-badge {
+    background: #ef4444;
+    color: #ffffff;
+    font-size: 0.58rem;
+    font-weight: 900;
+    padding: 2px 5px;
+    border-radius: 4px;
+    letter-spacing: 0.5px;
+    animation: livePulse 2s infinite;
+  }
+  @keyframes livePulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+  }
+  .broadcast-timeline-sub {
+    font-size: 0.64rem;
+    color: #93c5fd;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+  }
+
+  /* Two-tone TV City Badge (matching BROOKSVILLE | WEATHER ON THE 9s) */
+  .broadcast-city-badge {
+    display: inline-flex;
+    align-items: stretch;
+    border: 1px solid rgba(255,255,255,0.4);
+    border-radius: 8px;
+    overflow: hidden;
+    cursor: pointer;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+    transition: transform 0.15s, box-shadow 0.15s;
+    user-select: none;
+  }
+  .broadcast-city-badge:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+  }
+  .city-name-box {
+    background: #ffffff;
+    color: #0f172a;
+    font-size: 0.76rem;
+    font-weight: 800;
+    padding: 5px 9px;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    display: flex;
+    align-items: center;
+  }
+  .city-tag-box {
+    background: #0f274a;
+    color: #ffffff;
+    font-size: 0.68rem;
+    font-weight: 800;
+    padding: 5px 8px;
+    letter-spacing: 0.5px;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+  }
+
+  /* Battery Strategy Advisory Banner */
+  .solar-advisory {
+    border-radius: 14px;
+    padding: 10px 12px;
+    margin-bottom: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    transition: all 0.2s ease;
+  }
+  .solar-advisory.sunny {
+    background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);
+    border: 1px solid #a7f3d0;
+    color: #065f46;
+  }
+  .solar-advisory.moderate {
+    background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+    border: 1px solid #bfdbfe;
+    color: #1e40af;
+  }
+  .solar-advisory.rainy {
+    background: linear-gradient(135deg, #fff7ed 0%, #fee2e2 100%);
+    border: 1px solid #fecaca;
+    color: #991b1b;
+  }
+  .solar-advisory-title {
+    font-size: 0.82rem;
+    font-weight: 800;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .solar-advisory-desc {
+    font-size: 0.72rem;
+    line-height: 1.35;
+    font-weight: 500;
+  }
+  .solar-advisory-stats {
+    display: flex;
+    gap: 10px;
+    font-size: 0.68rem;
+    font-weight: 700;
+    margin-top: 2px;
+    opacity: 0.9;
+    flex-wrap: wrap;
+  }
+
+  /* Summary Metrics Strip */
+  .weather-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+  .weather-summary-box {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 7px 5px;
+    text-align: center;
+  }
+  .weather-summary-label {
+    font-size: 0.6rem;
+    color: #64748b;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+  }
+  .weather-summary-val {
+    font-size: 0.85rem;
+    font-weight: 800;
+    color: #1e293b;
+    margin-top: 2px;
+  }
+
+  /* 24h Timeline Scroll Area */
+  .weather-timeline-container {
+    position: relative;
+    margin-top: 4px;
+  }
+  .weather-timeline-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.68rem;
+    color: #475569;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
     margin-bottom: 6px;
+    padding: 0 2px;
+  }
+  .weather-timeline {
+    display: flex;
+    gap: 10px;
+    overflow-x: auto;
+    padding: 2px 2px 10px 2px;
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+    scrollbar-color: #cbd5e1 transparent;
+  }
+  .weather-timeline::-webkit-scrollbar {
+    height: 6px;
+  }
+  .weather-timeline::-webkit-scrollbar-thumb {
+    background: #94a3b8;
+    border-radius: 4px;
+  }
+
+  /* Broadcast TV Weather Hour Column (matching screenshot) */
+  .weather-hour-col {
+    flex: 0 0 84px;
+    scroll-snap-align: start;
+    background: linear-gradient(180deg, #d8eafb 0%, #b8d8f4 45%, #9ec5ec 100%);
+    border: 1px solid rgba(255, 255, 255, 0.85);
+    border-radius: 12px;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    text-align: center;
+    box-shadow: 0 4px 10px rgba(15, 23, 42, 0.12);
+    overflow: hidden;
+    position: relative;
+    transition: transform 0.15s, box-shadow 0.15s;
+  }
+  .weather-hour-col:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 14px rgba(15, 23, 42, 0.18);
+  }
+  .weather-hour-col.now {
+    border: 2px solid #2563eb;
+    box-shadow: 0 0 0 2px rgba(37,99,235,0.25), 0 6px 14px rgba(15,23,42,0.18);
+  }
+  .weather-hour-col.night-col {
+    background: linear-gradient(180deg, #c5d9ed 0%, #9cbcdb 50%, #7d9fc2 100%);
+  }
+
+  /* Deep Navy Cap (like 8 AM, 10 AM, 12 PM in screenshot) */
+  .weather-col-header {
+    background: #1c3a66;
+    color: #ffffff;
+    font-size: 0.74rem;
+    font-weight: 800;
+    padding: 5px 2px;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+  }
+  .weather-hour-col.now .weather-col-header {
+    background: #1d4ed8;
+  }
+
+  /* Column Inner Content */
+  .weather-col-body {
+    padding: 8px 4px 6px 4px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    flex: 1;
+  }
+  .weather-col-icon {
+    width: 44px;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 2px 0 4px 0;
+  }
+  
+  /* Hero Temperature Number (large bold like 58, 72, 76, 81 in screenshot) */
+  .weather-col-temp {
+    font-size: 1.85rem;
+    font-weight: 800;
+    color: #122844;
+    line-height: 1;
+    letter-spacing: -0.5px;
+    margin-bottom: 2px;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+  }
+  .weather-col-temp .temp-deg {
+    font-size: 1rem;
+    font-weight: 700;
+    margin-top: 1px;
+    opacity: 0.85;
+  }
+
+  /* Wind / Solar Generation Subtitle (like E calm, SE 6 in screenshot) */
+  .weather-col-sub {
+    font-size: 0.64rem;
+    font-weight: 700;
+    color: #2c4c74;
+    line-height: 1.2;
+    margin-bottom: 4px;
+    white-space: nowrap;
+  }
+
+  /* Bottom Precipitation Probability Bar (like 0% droplet in screenshot) */
+  .weather-col-rain {
+    background: rgba(22, 47, 85, 0.14);
+    border-top: 1px solid rgba(22, 47, 85, 0.16);
+    color: #162f55;
+    font-size: 0.7rem;
+    font-weight: 800;
+    padding: 4px 2px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+  }
+  .weather-col-rain.rain-alert {
+    background: #2563eb;
+    color: #ffffff;
+  }
+
+  /* City Picker Modal Styles */
+  .city-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 6px;
+    margin: 10px 0;
+  }
+  .btn-city-preset {
+    background: #f8fafc;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    padding: 8px 6px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #1e293b;
+    cursor: pointer;
+    text-align: left;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    transition: all 0.15s;
+  }
+  .btn-city-preset:hover, .btn-city-preset.active {
+    border-color: #2563eb;
+    background: #eff6ff;
+    color: #1d4ed8;
+  }
+  .city-search-item {
+    padding: 8px 10px;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    margin-bottom: 5px;
+    font-size: 0.75rem;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    transition: all 0.15s;
+  }
+  .city-search-item:hover {
+    background: #eff6ff;
+    border-color: #3b82f6;
   }
 </style>
 </head>
 <body>
 
+<div class="page-wrapper">
+
+<!-- Card 1: Main Inverter Telemetry & Power Flow Diagram -->
 <div class="app-frame">
   
   <!-- Live GitHub Update Available Banner -->
@@ -406,14 +1180,17 @@ const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
         <span id="sysMode" class="status-tag">Standby</span>
       </div>
     </div>
-    <div id="dataFeedIndicator" style="font-size:0.68rem; color:#64748b; text-align:right;">No Serial Feed</div>
+    <div style="display:flex; flex-direction:column; align-items:flex-end; gap:5px;">
+      <a href="/settings" style="text-decoration:none; background:#2563eb; color:#ffffff; font-size:0.74rem; font-weight:700; padding:6px 12px; border-radius:8px; display:inline-flex; align-items:center; gap:5px; box-shadow:0 2px 5px rgba(37,99,235,0.3); transition:all 0.15s;">⚙️ Settings & Diagnostics</a>
+      <div id="dataFeedIndicator" style="font-size:0.68rem; color:#64748b; text-align:right;">No Serial Feed</div>
+    </div>
   </div>
 
   <div class="diagram-container">
     <svg class="flow-svg" viewBox="0 0 360 390">
       <!-- 1. SOLAR LINE (Left Trunk x = 165) -->
       <path class="guide-path" d="M 114 70 H 151 Q 165 70 165 84 V 155" stroke="#fcd34d" stroke-dasharray="3 3" />
-      <path id="pulseSolar" class="active-pulse" d="M 114 70 H 151 Q 165 70 165 84 V 155" stroke="#f59e0b" />
+      <path id="pulseSolar" class="active-pulse" d="M 114 70 H 151 Q 165 70 165 84 V 155" stroke="#f59e0b" style="display:none;" />
 
       <!-- 2. GRID LINE (Right Trunk x = 195) -->
       <path class="guide-path" d="M 246 70 H 209 Q 195 70 195 84 V 155" stroke="#cbd5e1" stroke-dasharray="3 3" />
@@ -421,11 +1198,11 @@ const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
 
       <!-- 3. BATTERY LINE (Left Trunk x = 165) -->
       <path class="guide-path" d="M 165 235 V 284 Q 165 298 151 298 H 114" stroke="#a7f3d0" stroke-dasharray="3 3" />
-      <path id="pulseBattery" class="active-pulse" d="M 165 235 V 284 Q 165 298 151 298 H 114" stroke="#10b981" />
+      <path id="pulseBattery" class="active-pulse" d="M 165 235 V 284 Q 165 298 151 298 H 114" stroke="#10b981" style="display:none;" />
 
       <!-- 4. LOAD LINE (Right Trunk x = 195) -->
       <path class="guide-path" d="M 195 235 V 284 Q 195 298 209 298 H 246" stroke="#bfdbfe" stroke-dasharray="3 3" />
-      <path id="pulseLoad" class="active-pulse" d="M 195 235 V 284 Q 195 298 209 298 H 246" stroke="#3b82f6" />
+      <path id="pulseLoad" class="active-pulse" d="M 195 235 V 284 Q 195 298 209 298 H 246" stroke="#3b82f6" style="display:none;" />
     </svg>
 
     <!-- Node 1: Solar (Top Left) -->
@@ -553,16 +1330,161 @@ const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
       <span id="wifiDot" class="dot-green"></span>
       <span id="wifiLabel">Connecting to Wi-Fi...</span>
     </div>
-    <button class="btn-connect" onclick="openWifiModal()">⚙️ Settings & Wi-Fi</button>
+    <div style="display:flex; gap:6px;">
+      <a href="/settings" style="text-decoration:none; background:#0f172a; color:#ffffff; font-size:0.74rem; font-weight:700; padding:6px 10px; border-radius:8px; display:inline-flex; align-items:center; gap:4px;">⚙️ Live Parameters</a>
+      <button class="btn-connect" onclick="openWifiModal()">📶 Wi-Fi</button>
+    </div>
   </div>
 
   <!-- Firmware Version Footer -->
   <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.7rem; color:#64748b; margin-top:8px; padding:0 6px;">
     <span>NEXT Inverter Wi-Fi Card</span>
-    <span>Firmware: <b id="footerVersion" style="color:#0f172a;">v1.0.1</b></span>
+    <span>Firmware: <b id="footerVersion" style="color:#0f172a;">v1.1.6</b></span>
   </div>
 
+</div> <!-- /Card 1: app-frame -->
+
+<!-- Card 2: 14S Nissan Leaf — JK-BMS Live Monitor -->
+<div class="bms-card">
+  <div class="bms-card-header">
+    <div>
+      <div class="bms-title">🔋 14S Nissan Leaf — JK-BMS Monitor</div>
+      <div id="bmsStatusSub" class="bms-subtitle">Connecting via Bluetooth BLE...</div>
+    </div>
+    <div style="display:flex; align-items:center; gap:6px;">
+      <button class="btn-setup-bms" onclick="openBmsModal()">⚙️ Setup BMS</button>
+    </div>
+  </div>
+
+  <!-- Key Metrics Row: Delta V + 3 Temperatures -->
+  <div class="bms-metrics-row">
+    <!-- Delta V Metric Pill -->
+    <div class="bms-metric-box bms-delta-box" id="bmsDeltaBox">
+      <div class="bms-metric-label">VOLTAGE DIFF</div>
+      <div class="bms-metric-val" id="bmsDeltaVal">-- <span style="font-size:0.75rem;">mV</span></div>
+      <div class="bms-metric-sub" id="bmsDeltaSub">Delta V</div>
+    </div>
+
+    <!-- 3 Temperature Sensors -->
+    <div class="bms-metric-box">
+      <div class="bms-metric-label">BATT TEMP 1</div>
+      <div class="bms-metric-val" id="bmsTemp1">-- <span style="font-size:0.75rem;">°C</span></div>
+      <div class="bms-metric-sub">Probe T1</div>
+    </div>
+    <div class="bms-metric-box">
+      <div class="bms-metric-label">BATT TEMP 2</div>
+      <div class="bms-metric-val" id="bmsTemp2">-- <span style="font-size:0.75rem;">°C</span></div>
+      <div class="bms-metric-sub">Probe T2</div>
+    </div>
+    <div class="bms-metric-box">
+      <div class="bms-metric-label">MOS TEMP</div>
+      <div class="bms-metric-val" id="bmsTempMos">-- <span style="font-size:0.75rem;">°C</span></div>
+      <div class="bms-metric-sub">Power Board</div>
+    </div>
+  </div>
+
+  <!-- 14 Cells Header -->
+  <div class="bms-cells-title">
+    <span>14 Cell Voltages</span>
+    <span style="font-size:0.68rem; color:#64748b; font-weight:700;">
+      <span style="display:inline-block; width:8px; height:8px; border-radius:2px; background:#2563eb; margin-right:3px;"></span>Highest
+      <span style="display:inline-block; width:8px; height:8px; border-radius:2px; background:#dc2626; margin-left:8px; margin-right:3px;"></span>Lowest
+    </span>
+  </div>
+
+  <!-- 14 Cells Grid (Highest=Blue, Lowest=Red) -->
+  <div class="bms-cells-grid" id="bmsCellsGrid">
+    <!-- Populated by renderBmsData() -->
+  </div>
 </div>
+
+<!-- Card 3: Standalone Inverter Mode Macros Card -->
+<div class="macro-card">
+  <div class="macro-card-header">
+    <div>
+      <div class="macro-title">⚡ Inverter Mode Macros</div>
+      <div class="macro-subtitle">1-Click Custom Presets (RS-232)</div>
+    </div>
+    <div style="display:flex; gap:6px;">
+      <a href="/settings" style="text-decoration:none; background:#f8fafc; color:#1e293b; border:1px solid #cbd5e1; font-size:0.72rem; font-weight:700; padding:5px 8px; border-radius:8px; display:inline-flex; align-items:center; gap:4px;">⚙️ Inverter Programs</a>
+      <button class="btn-create-macro" onclick="openCreateMacroModal()">+ Create Macro</button>
+    </div>
+  </div>
+
+  <!-- Real-time Macro Execution Feedback & Error Details Banner -->
+  <div id="macroStatusBanner" class="macro-status-banner"></div>
+
+  <!-- Macro Buttons Container -->
+  <div id="macrosContainer" class="macros-list">
+    <div style="text-align:center; padding:12px; color:#64748b; font-size:0.75rem;">
+      Loading macros...
+    </div>
+  </div>
+</div>
+
+<!-- Card 3: 24h Solar & Weather Forecast Card (Broadcast TV Graphic Theme) -->
+<div class="weather-card">
+  <!-- TV Broadcast Style Header Bar -->
+  <div class="weather-broadcast-header">
+    <div class="broadcast-station-info">
+      <div class="broadcast-channel-title">
+        <span class="broadcast-live-badge">LIVE</span>
+        <span>SOLAR WEATHER RADAR</span>
+      </div>
+      <div class="broadcast-timeline-sub" id="weatherSubtitle">
+        <span id="weatherUpdatedTime">24-Hour Satellite Prediction</span>
+      </div>
+    </div>
+    
+    <!-- TV Two-tone Location Pill (matching screenshot) -->
+    <div class="broadcast-city-badge" onclick="openCityModal()" title="Click to change location">
+      <div class="city-name-box" id="weatherCityName">COLOMBO</div>
+      <div class="city-tag-box">CITY 📍</div>
+    </div>
+  </div>
+
+  <!-- Solar Strategy / Battery Decision Banner -->
+  <div id="solarAdvisoryBanner" class="solar-advisory sunny">
+    <div class="solar-advisory-title" id="advisoryTitle">
+      <span>☀️ Checking solar forecast...</span>
+    </div>
+    <div class="solar-advisory-desc" id="advisoryDesc">
+      Fetching 24-hour satellite forecast to calculate optimal battery mode...
+    </div>
+    <div class="solar-advisory-stats" id="advisoryStats"></div>
+  </div>
+
+  <!-- Summary Metric Strip -->
+  <div class="weather-summary-grid">
+    <div class="weather-summary-box">
+      <div class="weather-summary-label">Tomorrow Sun</div>
+      <div class="weather-summary-val" id="summarySolar">--</div>
+    </div>
+    <div class="weather-summary-box">
+      <div class="weather-summary-label">Max Rain Risk</div>
+      <div class="weather-summary-val" id="summaryRain">--</div>
+    </div>
+    <div class="weather-summary-box">
+      <div class="weather-summary-label">Avg Cloud Cover</div>
+      <div class="weather-summary-val" id="summaryCloud">--</div>
+    </div>
+  </div>
+
+  <!-- Hourly Timeline -->
+  <div class="weather-timeline-container">
+    <div class="weather-timeline-header">
+      <span>Hourly Timeline (Next 24 Hours)</span>
+      <span style="font-size:0.62rem; color:#94a3b8;">Swipe ↔</span>
+    </div>
+    <div id="weatherTimeline" class="weather-timeline">
+      <div style="text-align:center; width:100%; padding:16px 0; color:#64748b; font-size:0.75rem;">
+        Fetching hourly satellite forecast...
+      </div>
+    </div>
+  </div>
+</div>
+
+</div> <!-- /page-wrapper -->
 
 <!-- Settings & Wireless OTA Modal -->
 <div id="wifiModal" class="modal-overlay">
@@ -646,8 +1568,191 @@ const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
   </div>
 </div>
 
+<!-- Create / Edit Macro Preset Modal -->
+<div id="macroModal" class="modal-overlay">
+  <div class="modal" style="max-width:440px;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+      <h2 id="macroModalTitle" style="display:flex; align-items:center; gap:6px;">⚡ Create Inverter Macro</h2>
+      <button class="btn-cancel" onclick="closeMacroModal()" style="font-size:0.75rem; padding:4px 8px;">✕</button>
+    </div>
+    <p style="font-size:0.73rem; color:#64748b; margin-bottom:12px; line-height:1.35;">
+      Create a 1-click preset button. Choose which settings to change on the inverter over RS-232. Leave unneeded fields unchanged.
+    </p>
+
+    <input type="hidden" id="editMacroId" value="">
+
+    <!-- Macro Name -->
+    <div class="section-title">Macro Button Name</div>
+    <input type="text" id="macroInputName" placeholder="e.g. Day Solar Power, Night Battery, Grid Fast Charge" maxlength="45" style="margin-bottom:10px;">
+
+    <!-- Program 01: Output Source Priority -->
+    <div class="section-title">Program 01: Output Source Priority</div>
+    <select id="macroOutPriority" style="margin-bottom:10px;">
+      <option value="">-- Leave Unchanged --</option>
+      <option value="POP02">Solar First, Battery Second, Utility Grid Last (SBU Priority - Recommended for Leaf & Solar)</option>
+      <option value="POP01">Solar First, Utility Grid Blending & Assistance (SUB Mode - Blends Grid when load is high)</option>
+      <option value="POP00">Utility Grid First (USB Mode - Utility grid powers load, Solar charges battery)</option>
+    </select>
+
+    <!-- Program 16: Charger Source Priority -->
+    <div class="section-title">Program 16: Charger Source Priority</div>
+    <select id="macroChgPriority" style="margin-bottom:10px;">
+      <option value="">-- Leave Unchanged --</option>
+      <option value="PCP02">Only Solar Charging (OSO - 100% Free Solar, strictly no Grid charging)</option>
+      <option value="PCP01">Solar & Utility Charging (SNU - Simultaneous Solar & Grid charging)</option>
+      <option value="PCP03">Solar Energy First (CSO - Solar charges battery first; Utility only if no solar)</option>
+      <option value="PCP00">Utility First Charging</option>
+    </select>
+
+    <!-- Program 02: Maximum Charging Current (Capped at 30A for safety) -->
+    <div class="section-title">Program 02: Maximum Total Charging Current</div>
+    <select id="macroMaxChgCurr" style="margin-bottom:10px;">
+      <option value="">-- Leave Unchanged --</option>
+      <option value="MNCHGC010">10 Amps (~500 Watts - Ultra gentle trickle charge)</option>
+      <option value="MNCHGC020">20 Amps (~1000 Watts - Safe standard rate for 50Ah Leaf battery)</option>
+      <option value="MNCHGC030">30 Amps (~1500 Watts - Max Safe Rate for 50Ah Leaf battery)</option>
+    </select>
+
+    <!-- Program 11: Maximum Utility Grid Charging Current (Capped at 30A for safety) -->
+    <div class="section-title">Program 11: Maximum Utility Grid Charging Current</div>
+    <select id="macroMaxUtilCurr" style="margin-bottom:6px;">
+      <option value="">-- Leave Unchanged --</option>
+      <option value="MUCHGC002">2 Amps (Zero / Minimal Grid Charging - Recommended for OSO)</option>
+      <option value="MUCHGC010">10 Amps (~500 Watts - Gentle night grid charge)</option>
+      <option value="MUCHGC020">20 Amps (~1000 Watts - Standard grid charging)</option>
+      <option value="MUCHGC030">30 Amps (~1500 Watts - Max Safe grid charging)</option>
+    </select>
+    <div style="font-size:0.68rem; color:#059669; font-weight:600; margin-bottom:10px;">💡 Tip: Set to 2A when using USB Mode + OSO to strictly stop grid power from charging your battery.</div>
+
+    <!-- Program 23: Overload Bypass to Grid -->
+    <div class="section-title">Program 23: Overload Bypass to Grid</div>
+    <select id="macroOverloadBypass" style="margin-bottom:10px;">
+      <option value="">-- Leave Unchanged --</option>
+      <option value="PEb">Enable Overload Bypass (Automatically transfer load to Grid if inverter is overloaded)</option>
+      <option value="PDb">Disable Overload Bypass (Do not transfer to grid on overload)</option>
+    </select>
+
+    <!-- Battery Cycling Thresholds Collapsible Section -->
+    <div class="section-divider"></div>
+    <details style="margin-bottom:10px; font-size:0.8rem;">
+      <summary style="font-weight:700; color:#334155; cursor:pointer; margin-bottom:6px; outline:none;">
+        ⚙️ Optional: Grid Transfer Voltages (SBU / SUB)
+      </summary>
+      <div style="padding-top:6px; display:flex; flex-direction:column; gap:4px;">
+        <label style="font-size:0.69rem; color:#64748b; font-weight:600;">Program 12: Back to Utility Grid Voltage in SBU (42.0V to 51.0V)</label>
+        <input type="number" step="0.1" min="42.0" max="51.0" id="macroBackGridVolt" placeholder="e.g. 48.0 (Leave blank if unchanged)">
+
+        <label style="font-size:0.69rem; color:#64748b; font-weight:600;">Program 13: Back to Battery Discharge Voltage in SBU (48.0V to 58.0V)</label>
+        <input type="number" step="0.1" min="48.0" max="58.0" id="macroBackBatVolt" placeholder="e.g. 51.0 (Leave blank if unchanged)">
+      </div>
+    </details>
+
+    <div id="macroModalMsg" style="font-size:0.75rem; font-weight:600; margin-bottom:6px;"></div>
+
+    <div class="modal-buttons">
+      <button type="button" class="btn-cancel" onclick="closeMacroModal()">Cancel</button>
+      <button type="button" class="btn-save" onclick="saveMacroPreset()">Save Macro Button</button>
+    </div>
+  </div>
+</div>
+
+<!-- City Selection Modal -->
+<div id="cityModal" class="modal-overlay">
+  <div class="modal" style="max-width:400px;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+      <h2 style="display:flex; align-items:center; gap:6px;">📍 Select Location</h2>
+      <button class="btn-cancel" onclick="closeCityModal()" style="font-size:0.75rem; padding:4px 8px;">✕</button>
+    </div>
+    <p style="font-size:0.73rem; color:#64748b; margin-bottom:10px;">
+      Select your location to get accurate satellite solar irradiance & weather predictions.
+    </p>
+
+    <!-- Quick Presets -->
+    <div class="section-title">Common Sri Lankan Cities</div>
+    <div class="city-grid">
+      <button class="btn-city-preset" onclick="selectCity('Colombo', 6.9271, 79.8612)">📍 Colombo</button>
+      <button class="btn-city-preset" onclick="selectCity('Gampaha', 7.0840, 79.9939)">📍 Gampaha</button>
+      <button class="btn-city-preset" onclick="selectCity('Negombo', 7.2088, 79.8358)">📍 Negombo</button>
+      <button class="btn-city-preset" onclick="selectCity('Kandy', 7.2906, 80.6337)">📍 Kandy</button>
+      <button class="btn-city-preset" onclick="selectCity('Kurunegala', 7.4863, 80.3623)">📍 Kurunegala</button>
+      <button class="btn-city-preset" onclick="selectCity('Galle', 6.0535, 80.2210)">📍 Galle</button>
+      <button class="btn-city-preset" onclick="selectCity('Matara', 5.9549, 80.5550)">📍 Matara</button>
+      <button class="btn-city-preset" onclick="selectCity('Jaffna', 9.6615, 80.0255)">📍 Jaffna</button>
+      <button class="btn-city-preset" onclick="selectCity('Anuradhapura', 8.3114, 80.4037)">📍 Anuradhapura</button>
+      <button class="btn-city-preset" onclick="selectCity('Batticaloa', 7.7310, 81.6747)">📍 Batticaloa</button>
+    </div>
+
+    <!-- Custom Search -->
+    <div class="section-divider"></div>
+    <div class="section-title">Search Any Other City / Town</div>
+    <div style="display:flex; gap:6px;">
+      <input type="text" id="citySearchInput" placeholder="e.g. Kalutara, Ratnapura, Badulla..." style="margin:0;" onkeydown="if(event.key==='Enter') searchCustomCity()">
+      <button type="button" class="btn-save" style="padding:7px 12px; white-space:nowrap;" onclick="searchCustomCity()">Search</button>
+    </div>
+    <div id="citySearchResults" style="margin-top:8px; max-height:140px; overflow-y:auto;"></div>
+
+    <div class="modal-buttons" style="margin-top:14px;">
+      <button type="button" class="btn-cancel" onclick="closeCityModal()">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- JK-BMS Bluetooth Setup Modal -->
+<div id="bmsModal" class="modal-overlay">
+  <div class="modal" style="max-width:440px;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+      <h2 style="display:flex; align-items:center; gap:6px;">📡 JK-BMS Bluetooth Setup</h2>
+      <button class="btn-cancel" onclick="closeBmsModal()" style="font-size:0.75rem; padding:4px 8px;">✕</button>
+    </div>
+    <p style="font-size:0.73rem; color:#64748b; margin-bottom:12px; line-height:1.35;">
+      Search for your JK Smart BMS over Bluetooth Low Energy (BLE), select your device, and enter your BMS PIN password.
+    </p>
+
+    <div style="margin-bottom:10px; display:flex; align-items:center; gap:8px;">
+      <input type="checkbox" id="bmsEnabled" style="width:16px; height:16px; margin:0;">
+      <label for="bmsEnabled" style="font-size:0.78rem; font-weight:700; color:#1e293b; cursor:pointer;">Enable JK-BMS Bluetooth Monitoring</label>
+    </div>
+
+    <!-- Bluetooth Scanner -->
+    <div class="section-title" style="display:flex; justify-content:space-between; align-items:center;">
+      <span>Nearby Bluetooth Devices</span>
+      <button type="button" class="btn-cancel" id="btnBmsScan" onclick="scanBmsDevices()" style="font-size:0.7rem; padding:3px 8px;">🔍 Search Devices</button>
+    </div>
+    <div id="bmsScanStatus" style="font-size:0.72rem; color:#64748b; margin-bottom:4px;">Click "Search Devices" to scan nearby BLE devices.</div>
+
+    <select id="bmsDeviceSelect" onchange="onBmsDeviceSelected()" style="margin-bottom:8px;">
+      <option value="" disabled selected>-- Select Discovered BMS --</option>
+    </select>
+
+    <div style="display:flex; gap:6px; margin-bottom:8px;">
+      <div style="flex:1;">
+        <label style="font-size:0.7rem; color:#475569; font-weight:600;">Device Name:</label>
+        <input type="text" id="bmsDeviceName" placeholder="e.g. JK-B2A8S20P" style="margin-top:2px;">
+      </div>
+      <div style="flex:1.2;">
+        <label style="font-size:0.7rem; color:#475569; font-weight:600;">Bluetooth MAC Address:</label>
+        <input type="text" id="bmsDeviceMac" placeholder="XX:XX:XX:XX:XX:XX" style="margin-top:2px;">
+      </div>
+    </div>
+
+    <!-- Password / PIN -->
+    <div class="section-title">BMS PIN / Password</div>
+    <input type="password" id="bmsPin" placeholder="Default is 1234 (or 123456)" value="1234" maxlength="16" style="margin-bottom:6px;">
+    <div style="font-size:0.68rem; color:#64748b; margin-bottom:12px;">Standard factory PIN is <code>1234</code>. Enter your custom PIN if changed in the JK app.</div>
+
+    <div id="bmsModalMsg" style="font-size:0.75rem; font-weight:600; margin-bottom:8px;"></div>
+
+    <div class="modal-buttons">
+      <button type="button" class="btn-cancel" onclick="closeBmsModal()">Cancel</button>
+      <button type="button" class="btn-save" onclick="saveBmsConfig()">💾 Save & Connect BMS</button>
+    </div>
+  </div>
+</div>
+
 <script>
+let isMacroApplying = false;
 async function refreshData() {
+  if (isMacroApplying) return; // Prevent background polling collisions during macro runs
   try {
     const res = await fetch('/api/telemetry');
     if (!res.ok) throw new Error("HTTP Error");
@@ -675,11 +1780,16 @@ async function refreshData() {
     const pvW = Math.round(d.pv_watts);
     document.getElementById('pvWatts').innerHTML = pvW + '<span style="font-size:0.9rem;">w</span>';
     document.getElementById('pvSub').textContent = d.pv_voltage.toFixed(1) + "V • " + d.pv_current.toFixed(2) + "A";
-    document.getElementById('pulseSolar').style.display = (pvW > 10) ? 'block' : 'none';
+    const pulseSolar = document.getElementById('pulseSolar');
+    if (pulseSolar) pulseSolar.style.display = (pvW > 10) ? 'block' : 'none';
 
     // Grid
-    document.getElementById('gridWatts').innerHTML = '0<span style="font-size:0.9rem;">w</span>';
+    const gridW = Math.round(d.grid_watts !== undefined ? d.grid_watts : 0);
+    document.getElementById('gridWatts').innerHTML = gridW + '<span style="font-size:0.9rem;">w</span>';
+    const gridA = (d.grid_voltage > 0 ? (gridW / d.grid_voltage).toFixed(2) : "0.00");
     document.getElementById('gridSub').textContent = d.grid_voltage.toFixed(1) + "V • " + d.grid_frequency.toFixed(1) + "Hz";
+    const pulseGrid = document.getElementById('pulseGrid');
+    if (pulseGrid) pulseGrid.style.display = (gridW > 10) ? 'block' : 'none';
 
     // Inverter
     document.getElementById('invTemp').textContent = d.heatsink_temp.toFixed(1) + " °C";
@@ -690,15 +1800,25 @@ async function refreshData() {
     const batA = (d.battery_charge_current > 0 ? d.battery_charge_current : d.battery_discharge_current);
     document.getElementById('batSub').textContent = d.battery_voltage.toFixed(1) + "V • " + batA + "A";
     
+    const pulseBat = document.getElementById('pulseBattery');
     if (d.battery_charge_current > 0) {
-      document.getElementById('batCaption').innerHTML = 'Charge <span class="help-icon">?</span>';
-      document.getElementById('pulseBattery').style.display = 'block';
+      document.getElementById('batCaption').innerHTML = 'Charging <span class="help-icon">?</span>';
+      if (pulseBat) {
+        pulseBat.style.display = 'block';
+        pulseBat.classList.remove('reverse'); // Inverter -> Battery (Charging)
+      }
     } else if (d.battery_discharge_current > 0) {
-      document.getElementById('batCaption').innerHTML = 'Discharge <span class="help-icon">?</span>';
-      document.getElementById('pulseBattery').style.display = 'block';
+      document.getElementById('batCaption').innerHTML = 'Discharging <span class="help-icon">?</span>';
+      if (pulseBat) {
+        pulseBat.style.display = 'block';
+        pulseBat.classList.add('reverse'); // Battery -> Inverter (Discharging)
+      }
     } else {
       document.getElementById('batCaption').innerHTML = 'Standby <span class="help-icon">?</span>';
-      document.getElementById('pulseBattery').style.display = 'none';
+      if (pulseBat) {
+        pulseBat.style.display = 'none';
+        pulseBat.classList.remove('reverse');
+      }
     }
 
     // Load
@@ -706,7 +1826,8 @@ async function refreshData() {
     document.getElementById('loadWatts').innerHTML = loadW + '<span style="font-size:0.9rem;">w</span>';
     const loadA = (d.ac_output_voltage > 0 ? (loadW / d.ac_output_voltage).toFixed(2) : "0.00");
     document.getElementById('loadSub').textContent = d.ac_output_voltage.toFixed(1) + "V • " + loadA + "A";
-    document.getElementById('pulseLoad').style.display = (loadW > 10) ? 'block' : 'none';
+    const pulseLoad = document.getElementById('pulseLoad');
+    if (pulseLoad) pulseLoad.style.display = (loadW > 10) ? 'block' : 'none';
 
     // Wi-Fi Status
     const dot = document.getElementById('wifiDot');
@@ -752,6 +1873,11 @@ async function refreshData() {
       updateTbStatus(d.tb_enabled, d.tb_status);
     }
 
+    // JK-BMS 14S Bluetooth Telemetry
+    if (d.bms) {
+      renderBmsData(d.bms);
+    }
+
   } catch(e) {
     const connBadge = document.getElementById('invConnBadge');
     if (connBadge) {
@@ -764,6 +1890,213 @@ async function refreshData() {
       feedIndicator.style.color = '#dc2626';
     }
     document.getElementById('sysMode').textContent = 'Connecting...';
+  }
+}
+
+// -------------------------------------------------------------
+// JK-BMS 14S Nissan Leaf Renderer & Setup Modal Controller
+// -------------------------------------------------------------
+function renderBmsData(bms) {
+  if (!bms) return;
+  const statusSub = document.getElementById('bmsStatusSub');
+  if (bms.connected && bms.valid) {
+    statusSub.innerHTML = `<span style="color:#059669; font-weight:700;">🟢 Connected: ${escapeHtml(bms.name || 'JK-BMS')}</span> (RSSI: ${bms.rssi} dBm${bms.balancing ? ' • ⚖️ Balancing' : ''})`;
+  } else if (bms.connected) {
+    statusSub.innerHTML = `<span style="color:#2563eb; font-weight:700;">🔵 Connected</span> (Waiting for telemetry stream...)`;
+  } else if (bms.enabled) {
+    statusSub.innerHTML = `<span style="color:#d97706; font-weight:700;">🟡 ${escapeHtml(bms.status || 'Connecting...')}</span>`;
+  } else {
+    statusSub.innerHTML = `<span style="color:#64748b;">⚪ Disabled (Click "⚙️ Setup BMS" to connect)</span>`;
+  }
+
+  // Delta V Pill
+  const deltaBox = document.getElementById('bmsDeltaBox');
+  const deltaVal = document.getElementById('bmsDeltaVal');
+  const deltaSub = document.getElementById('bmsDeltaSub');
+  if (bms.valid && bms.delta_mv !== undefined) {
+    const dMv = Math.round(bms.delta_mv);
+    deltaVal.innerHTML = `${dMv} <span style="font-size:0.75rem;">mV</span>`;
+    deltaBox.className = 'bms-metric-box bms-delta-box ' + (dMv <= 15 ? 'balanced' : (dMv <= 30 ? 'moderate' : 'imbalanced'));
+    deltaSub.textContent = dMv <= 15 ? 'Balanced 🟢' : (dMv <= 30 ? 'Moderate 🟡' : 'Imbalanced 🔴');
+  } else {
+    deltaVal.innerHTML = `-- <span style="font-size:0.75rem;">mV</span>`;
+    deltaBox.className = 'bms-metric-box bms-delta-box';
+    deltaSub.textContent = 'Delta V';
+  }
+
+  // 3 Temperatures
+  document.getElementById('bmsTemp1').innerHTML = (bms.valid && bms.temp_sensor1 !== undefined) ? `${bms.temp_sensor1.toFixed(1)} <span style="font-size:0.75rem;">°C</span>` : `-- <span style="font-size:0.75rem;">°C</span>`;
+  document.getElementById('bmsTemp2').innerHTML = (bms.valid && bms.temp_sensor2 !== undefined) ? `${bms.temp_sensor2.toFixed(1)} <span style="font-size:0.75rem;">°C</span>` : `-- <span style="font-size:0.75rem;">°C</span>`;
+  document.getElementById('bmsTempMos').innerHTML = (bms.valid && bms.temp_mos !== undefined) ? `${bms.temp_mos.toFixed(1)} <span style="font-size:0.75rem;">°C</span>` : `-- <span style="font-size:0.75rem;">°C</span>`;
+
+  // Render 14 Cell Boxes
+  const grid = document.getElementById('bmsCellsGrid');
+  if (!bms.valid || !Array.isArray(bms.cells) || bms.cells.length === 0) {
+    let emptyHtml = '';
+    for (let i = 1; i <= 14; i++) {
+      emptyHtml += `
+        <div class="bms-cell-box">
+          <div class="bms-cell-label">C${i < 10 ? '0' + i : i}</div>
+          <div class="bms-cell-volt">-- V</div>
+          <div class="bms-cell-bar-bg"><div class="bms-cell-bar-fill" style="width:0%;"></div></div>
+        </div>`;
+    }
+    grid.innerHTML = emptyHtml;
+    return;
+  }
+
+  let html = '';
+  const cellCount = Math.min(14, bms.cells.length);
+  const maxIdx = bms.max_cell_idx; // 1-indexed (1 to 14)
+  const minIdx = bms.min_cell_idx; // 1-indexed (1 to 14)
+
+  for (let i = 0; i < cellCount; i++) {
+    const cellNum = i + 1;
+    const v = bms.cells[i];
+    const isHighest = (cellNum === maxIdx);
+    const isLowest = (cellNum === minIdx);
+
+    // Percentage of Li-ion range (3.2V to 4.15V)
+    const pct = Math.max(0, Math.min(100, Math.round(((v - 3.20) / (4.15 - 3.20)) * 100)));
+
+    let boxClass = 'bms-cell-box';
+    let badgeHtml = '';
+    if (isHighest) {
+      boxClass += ' highest';
+      badgeHtml = `<span class="bms-cell-badge max">MAX 🔵</span>`;
+    } else if (isLowest) {
+      boxClass += ' lowest';
+      badgeHtml = `<span class="bms-cell-badge min">MIN 🔴</span>`;
+    }
+
+    html += `
+      <div class="${boxClass}">
+        ${badgeHtml}
+        <div class="bms-cell-label">C${cellNum < 10 ? '0' + cellNum : cellNum}</div>
+        <div class="bms-cell-volt">${v.toFixed(3)}<span style="font-size:0.65rem; font-weight:600;">V</span></div>
+        <div class="bms-cell-bar-bg">
+          <div class="bms-cell-bar-fill" style="width:${pct}%;"></div>
+        </div>
+      </div>
+    `;
+  }
+  grid.innerHTML = html;
+}
+
+// -------------------------------------------------------------
+// JK-BMS Setup Modal & Bluetooth Scanner Functions
+// -------------------------------------------------------------
+async function openBmsModal() {
+  document.getElementById('bmsModal').classList.add('active');
+  document.getElementById('bmsModalMsg').textContent = '';
+  try {
+    const res = await fetch('/api/bms_config');
+    if (res.ok) {
+      const cfg = await res.json();
+      document.getElementById('bmsEnabled').checked = !!cfg.enabled;
+      document.getElementById('bmsDeviceMac').value = cfg.mac || '';
+      document.getElementById('bmsDeviceName').value = cfg.name || '';
+      document.getElementById('bmsPin').value = cfg.pin || '1234';
+      if (cfg.connected) {
+        document.getElementById('bmsScanStatus').textContent = `🟢 Currently connected to ${cfg.name || cfg.mac}`;
+      } else {
+        document.getElementById('bmsScanStatus').textContent = `Status: ${cfg.status || 'Disconnected'}`;
+      }
+    }
+  } catch(e) {}
+}
+
+function closeBmsModal() {
+  document.getElementById('bmsModal').classList.remove('active');
+  document.getElementById('bmsModalMsg').textContent = '';
+}
+
+async function scanBmsDevices() {
+  const btn = document.getElementById('btnBmsScan');
+  const statusEl = document.getElementById('bmsScanStatus');
+  const sel = document.getElementById('bmsDeviceSelect');
+  btn.disabled = true;
+  btn.textContent = '⏳ Scanning...';
+  statusEl.textContent = '🔍 Scanning nearby BLE devices (4s)...';
+
+  try {
+    const res = await fetch('/api/bms_scan');
+    const list = await res.json();
+    sel.innerHTML = '<option value="" disabled selected>-- Select Discovered Device --</option>';
+
+    if (!list || list.length === 0) {
+      statusEl.textContent = 'No Bluetooth devices detected. Ensure JK-BMS is powered on and nearby.';
+    } else {
+      statusEl.textContent = `Found ${list.length} Bluetooth devices:`;
+      let autoSelected = false;
+      list.forEach(d => {
+        const opt = document.createElement('option');
+        opt.value = d.mac;
+        opt.dataset.name = d.name;
+        opt.textContent = `${d.is_jk ? '⭐ [JK-BMS] ' : ''}${d.name} (${d.mac}) [${d.rssi} dBm]`;
+        sel.appendChild(opt);
+
+        // Auto select first JK device found
+        if (d.is_jk && !autoSelected) {
+          sel.value = d.mac;
+          document.getElementById('bmsDeviceMac').value = d.mac;
+          document.getElementById('bmsDeviceName').value = d.name;
+          autoSelected = true;
+        }
+      });
+    }
+  } catch(e) {
+    statusEl.textContent = 'Scan error. Please try again or type MAC address manually.';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🔍 Search Devices';
+  }
+}
+
+function onBmsDeviceSelected() {
+  const sel = document.getElementById('bmsDeviceSelect');
+  const opt = sel.options[sel.selectedIndex];
+  if (opt && opt.value) {
+    document.getElementById('bmsDeviceMac').value = opt.value;
+    document.getElementById('bmsDeviceName').value = opt.dataset.name || '';
+  }
+}
+
+async function saveBmsConfig() {
+  const enabled = document.getElementById('bmsEnabled').checked;
+  const mac = document.getElementById('bmsDeviceMac').value.trim();
+  const name = document.getElementById('bmsDeviceName').value.trim();
+  const pin = document.getElementById('bmsPin').value.trim();
+  const msgEl = document.getElementById('bmsModalMsg');
+
+  if (enabled && !mac) {
+    msgEl.style.color = '#ef4444';
+    msgEl.textContent = 'Please select or enter the Bluetooth MAC address of your JK-BMS.';
+    return;
+  }
+
+  msgEl.style.color = '#2563eb';
+  msgEl.textContent = 'Saving configuration & connecting to JK-BMS...';
+
+  try {
+    const fd = new FormData();
+    fd.append('enabled', enabled ? '1' : '0');
+    fd.append('mac', mac);
+    fd.append('name', name);
+    fd.append('pin', pin);
+
+    const res = await fetch('/api/bms_config', { method: 'POST', body: fd });
+    if (res.ok) {
+      msgEl.style.color = '#059669';
+      msgEl.textContent = '✅ JK-BMS settings saved! ESP32 is connecting...';
+      setTimeout(() => { closeBmsModal(); refreshData(); }, 1200);
+    } else {
+      msgEl.style.color = '#ef4444';
+      msgEl.textContent = 'Failed to save settings.';
+    }
+  } catch(e) {
+    msgEl.style.color = '#ef4444';
+    msgEl.textContent = 'Network error saving BMS settings.';
   }
 }
 
@@ -1015,8 +2348,701 @@ function uploadBrowserBin() {
   xhr.send(fd);
 }
 
+// -------------------------------------------------------------
+// Inverter Mode Macros Engine
+// -------------------------------------------------------------
+let userMacros = [];
+
+async function loadMacros() {
+  try {
+    const res = await fetch('/api/macros');
+    if (res.ok) {
+      userMacros = await res.json();
+      renderMacros();
+    }
+  } catch(e) {
+    document.getElementById('macrosContainer').innerHTML = '<div style="text-align:center; padding:10px; color:#ef4444; font-size:0.75rem;">Error loading macros.</div>';
+  }
+}
+
+function renderMacros() {
+  const container = document.getElementById('macrosContainer');
+  if (!userMacros || userMacros.length === 0) {
+    container.innerHTML = '<div style="text-align:center; padding:14px; color:#64748b; font-size:0.75rem;">No macros created yet.<br>Click <b>+ Create Macro</b> above to create your first 1-click preset.</div>';
+    return;
+  }
+
+  let html = '';
+  userMacros.forEach(m => {
+    html += `
+      <div class="macro-item">
+        <div class="macro-info">
+          <div class="macro-name">
+            <span>${escapeHtml(m.name)}</span>
+          </div>
+          <div class="macro-desc">${escapeHtml(m.desc || 'Custom Inverter Settings Preset')}</div>
+        </div>
+        <div class="macro-actions">
+          <button class="btn-apply-macro" id="btnApply_${m.id}" onclick="applyMacro('${m.id}')">Apply</button>
+          <button class="btn-icon-macro" title="Edit Macro" onclick="editMacro('${m.id}')">✏️</button>
+          <button class="btn-icon-macro" title="Delete Macro" onclick="deleteMacro('${m.id}')">🗑️</button>
+        </div>
+      </div>
+    `;
+  });
+  container.innerHTML = html;
+}
+
+function escapeHtml(str) {
+  if (!str) return '';
+  return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+}
+
+function openCreateMacroModal() {
+  document.getElementById('macroModalTitle').textContent = '⚡ Create Inverter Macro';
+  document.getElementById('editMacroId').value = '';
+  document.getElementById('macroInputName').value = '';
+  document.getElementById('macroOutPriority').value = '';
+  document.getElementById('macroChgPriority').value = '';
+  document.getElementById('macroMaxChgCurr').value = '';
+  document.getElementById('macroMaxUtilCurr').value = '';
+  document.getElementById('macroOverloadBypass').value = '';
+  document.getElementById('macroBackGridVolt').value = '';
+  document.getElementById('macroBackBatVolt').value = '';
+  document.getElementById('macroModalMsg').textContent = '';
+  document.getElementById('macroModal').classList.add('active');
+}
+
+function closeMacroModal() {
+  document.getElementById('macroModal').classList.remove('active');
+  document.getElementById('macroModalMsg').textContent = '';
+}
+
+function editMacro(id) {
+  const m = userMacros.find(x => x.id === id);
+  if (!m) return;
+
+  document.getElementById('macroModalTitle').textContent = '✏️ Edit Inverter Macro';
+  document.getElementById('editMacroId').value = m.id;
+  document.getElementById('macroInputName').value = m.name || '';
+  
+  // Reset fields first
+  document.getElementById('macroOutPriority').value = '';
+  document.getElementById('macroChgPriority').value = '';
+  document.getElementById('macroMaxChgCurr').value = '';
+  document.getElementById('macroMaxUtilCurr').value = '';
+  document.getElementById('macroOverloadBypass').value = '';
+  document.getElementById('macroBackGridVolt').value = '';
+  document.getElementById('macroBackBatVolt').value = '';
+
+  // Parse existing commands
+  if (Array.isArray(m.cmds)) {
+    m.cmds.forEach(cmd => {
+      if (cmd.startsWith('POP')) document.getElementById('macroOutPriority').value = cmd;
+      else if (cmd.startsWith('PCP')) document.getElementById('macroChgPriority').value = cmd;
+      else if (cmd.startsWith('MNCHGC') || cmd.startsWith('MCHGC')) document.getElementById('macroMaxChgCurr').value = cmd.replace('MCHGC', 'MNCHGC');
+      else if (cmd.startsWith('MUCHGC')) document.getElementById('macroMaxUtilCurr').value = cmd;
+      else if (cmd === 'PEb' || cmd === 'PDb') document.getElementById('macroOverloadBypass').value = cmd;
+      else if (cmd.startsWith('PBCV')) document.getElementById('macroBackGridVolt').value = parseFloat(cmd.substring(4));
+      else if (cmd.startsWith('PBDV')) document.getElementById('macroBackBatVolt').value = parseFloat(cmd.substring(4));
+    });
+  }
+
+  document.getElementById('macroModalMsg').textContent = '';
+  document.getElementById('macroModal').classList.add('active');
+}
+
+async function saveMacroPreset() {
+  const name = document.getElementById('macroInputName').value.trim();
+  const msgEl = document.getElementById('macroModalMsg');
+
+  if (!name) {
+    msgEl.style.color = '#ef4444';
+    msgEl.textContent = 'Please enter a name for this macro button.';
+    return;
+  }
+
+  const cmds = [];
+  const descParts = [];
+
+  // 1. Output Priority (Full Words!)
+  const outPri = document.getElementById('macroOutPriority').value;
+  if (outPri) {
+    cmds.push(outPri);
+    if (outPri === 'POP02') descParts.push('Solar First, Battery Second, Utility Grid Last (SBU Priority)');
+    else if (outPri === 'POP01') descParts.push('Solar First, Utility Grid Blending (SUB Mode)');
+    else if (outPri === 'POP00') descParts.push('Utility Grid First (USB Mode)');
+  }
+
+  // 2. Charger Priority (Full Words!)
+  const chgPri = document.getElementById('macroChgPriority').value;
+  if (chgPri) {
+    cmds.push(chgPri);
+    if (chgPri === 'PCP02') descParts.push('Only Solar Charging (OSO - 100% Free Solar)');
+    else if (chgPri === 'PCP01') descParts.push('Solar & Utility Simultaneous Charging (SNU)');
+    else if (chgPri === 'PCP03') descParts.push('Solar Energy First (CSO)');
+    else if (chgPri === 'PCP00') descParts.push('Utility Grid First Charging');
+  }
+
+  // 3. Max Charge Current (Full Words!)
+  const maxChg = document.getElementById('macroMaxChgCurr').value;
+  if (maxChg) {
+    cmds.push(maxChg);
+    const amps = parseInt(maxChg.replace('MNCHGC', '').replace('MCHGC', ''), 10);
+    descParts.push(`Max Total Charge: ${amps} Amps`);
+  }
+
+  // 4. Max Utility Current (Full Words!)
+  const maxUtil = document.getElementById('macroMaxUtilCurr').value;
+  if (maxUtil) {
+    cmds.push(maxUtil);
+    const amps = parseInt(maxUtil.substring(6), 10);
+    descParts.push(`Max Utility Charge: ${amps} Amps`);
+  }
+
+  // 5. Overload Bypass (Full Words!)
+  const ovr = document.getElementById('macroOverloadBypass').value;
+  if (ovr) {
+    cmds.push(ovr);
+    if (ovr === 'PEb') descParts.push('Overload Bypass to Grid Enabled');
+    else if (ovr === 'PDb') descParts.push('Overload Bypass Disabled');
+  }
+
+  // 6. Custom Battery Voltages (Optional)
+  const backGridEl = document.getElementById('macroBackGridVolt');
+  const backGridV = backGridEl ? parseFloat(backGridEl.value) : NaN;
+  if (!isNaN(backGridV) && backGridV >= 42.0 && backGridV <= 51.0) {
+    cmds.push('PBCV' + backGridV.toFixed(1));
+    descParts.push(`Back to Grid: ${backGridV.toFixed(1)}V`);
+  }
+
+  const backBatEl = document.getElementById('macroBackBatVolt');
+  const backBatV = backBatEl ? parseFloat(backBatEl.value) : NaN;
+  if (!isNaN(backBatV) && backBatV >= 48.0 && backBatV <= 58.0) {
+    cmds.push('PBDV' + backBatV.toFixed(1));
+    descParts.push(`Back to Battery: ${backBatV.toFixed(1)}V`);
+  }
+
+  if (cmds.length === 0) {
+    msgEl.style.color = '#ef4444';
+    msgEl.textContent = 'Please select at least one inverter setting for this macro.';
+    return;
+  }
+
+  msgEl.style.color = '#2563eb';
+  msgEl.textContent = 'Saving macro preset to ESP32...';
+
+  const editId = document.getElementById('editMacroId').value;
+  const macroObj = {
+    id: editId || ('m_' + Date.now()),
+    name: name,
+    desc: descParts.join(' • '),
+    cmds: cmds
+  };
+
+  let updatedList = [...userMacros];
+  if (editId) {
+    const idx = updatedList.findIndex(x => x.id === editId);
+    if (idx >= 0) updatedList[idx] = macroObj;
+    else updatedList.push(macroObj);
+  } else {
+    updatedList.push(macroObj);
+  }
+
+  try {
+    const res = await fetch('/api/save_macros', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updatedList)
+    });
+    if (res.ok) {
+      userMacros = updatedList;
+      renderMacros();
+      closeMacroModal();
+      showMacroBanner(`✅ Macro button "${name}" created and saved!`, 'success');
+    } else {
+      msgEl.style.color = '#ef4444';
+      msgEl.textContent = 'Failed to save macro to ESP32.';
+    }
+  } catch(e) {
+    msgEl.style.color = '#ef4444';
+    msgEl.textContent = 'Network error saving macro.';
+  }
+}
+
+async function deleteMacro(id) {
+  const m = userMacros.find(x => x.id === id);
+  if (!m) return;
+  if (!confirm(`Delete macro preset "${m.name}"?`)) return;
+
+  const updatedList = userMacros.filter(x => x.id !== id);
+  try {
+    const res = await fetch('/api/save_macros', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updatedList)
+    });
+    if (res.ok) {
+      userMacros = updatedList;
+      renderMacros();
+      showMacroBanner(`🗑️ Deleted macro "${m.name}".`, 'success');
+    }
+  } catch(e) {
+    alert('Failed to delete macro.');
+  }
+}
+
+async function applyMacro(id) {
+  const m = userMacros.find(x => x.id === id);
+  if (!m || !m.cmds || m.cmds.length === 0) return;
+
+  const btn = document.getElementById(`btnApply_${id}`);
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'Applying...';
+  }
+
+  isMacroApplying = true;
+  showMacroBanner(`⏳ Applying "${escapeHtml(m.name)}" to Inverter via RS-232 (${m.cmds.length} settings)...`, 'running');
+
+  try {
+    const res = await fetch('/api/run_macro', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'cmds=' + encodeURIComponent(m.cmds.join(','))
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      if (data.all_ack) {
+        let details = (data.results || []).map(r => `<b>${escapeHtml(r.cmd)}</b>: ACK`).join(', ');
+        showMacroBanner(`✅ <b>"${escapeHtml(m.name)}" applied successfully!</b><br><span style="font-size:0.7rem; color:#065f46;">All settings confirmed by Inverter (${details})</span>`, 'success');
+      } else {
+        let errHtml = `<div>⚠️ <b>"${escapeHtml(m.name)}" executed with responses:</b></div><div style="margin-top:5px; font-size:0.72rem; line-height:1.5;">`;
+        if (data.results && data.results.length > 0) {
+          data.results.forEach(r => {
+            if (r.ack) {
+              errHtml += `<div>• <b>${escapeHtml(r.cmd)}</b>: <span style="color:#059669; font-weight:700;">✅ Confirmed (ACK)</span></div>`;
+            } else {
+              errHtml += `<div>• <b>${escapeHtml(r.cmd)}</b>: <span style="color:#dc2626; font-weight:700;">❌ Rejected / No ACK</span> <span style="color:#475569; font-size:0.68rem;">(Inverter reply: <code>${escapeHtml(r.resp || 'Timeout')}</code>)</span></div>`;
+            }
+          });
+        }
+        errHtml += `</div><div style="font-size:0.68rem; color:#64748b; margin-top:4px;">Check if the inverter is in a mode that permits changing these specific parameters.</div>`;
+        showMacroBanner(errHtml, 'error');
+      }
+    } else {
+      showMacroBanner(`❌ <b>Error:</b> ESP32 could not process the macro request.`, 'error');
+    }
+  } catch(e) {
+    showMacroBanner(`❌ <b>Network error:</b> Could not communicate with ESP32.`, 'error');
+  } finally {
+    isMacroApplying = false;
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = 'Apply';
+    }
+    setTimeout(refreshData, 600);
+  }
+}
+
+let macroBannerTimer = null;
+function showMacroBanner(msgHtml, type) {
+  const banner = document.getElementById('macroStatusBanner');
+  if (!banner) return;
+  banner.className = `macro-status-banner ${type}`;
+  banner.innerHTML = msgHtml;
+  banner.style.display = 'block';
+
+  if (macroBannerTimer) clearTimeout(macroBannerTimer);
+  if (type === 'success') {
+    macroBannerTimer = setTimeout(() => {
+      banner.style.display = 'none';
+    }, 8000);
+  }
+}
+
+// ==================== 24h Solar & Weather Forecast ====================
+let currentWeatherCity = {
+  name: "Colombo",
+  lat: 6.9271,
+  lon: 79.8612
+};
+
+function initWeatherCity() {
+  try {
+    const saved = localStorage.getItem('next_inv_weather_city');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (parsed && parsed.name && parsed.lat && parsed.lon) {
+        currentWeatherCity = parsed;
+      }
+    }
+  } catch(e) {}
+  updateCityHeaderDisplay();
+}
+
+function updateCityHeaderDisplay() {
+  const el = document.getElementById('weatherCityName');
+  if (el) el.textContent = (currentWeatherCity.name || 'COLOMBO').toUpperCase();
+}
+
+// Generate TV broadcast style vector weather illustrations
+function getWeatherSvgIcon(code, isDay) {
+  if (isDay) {
+    if (code === 0) {
+      // Clear Brilliant Sun with Radiant Golden Rays
+      return `<svg width="44" height="44" viewBox="0 0 48 48">
+        <defs>
+          <radialGradient id="sunG" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stop-color="#fffbeb"/>
+            <stop offset="35%" stop-color="#fbbf24"/>
+            <stop offset="100%" stop-color="#f59e0b"/>
+          </radialGradient>
+        </defs>
+        <g stroke="#f59e0b" stroke-width="2.5" stroke-linecap="round">
+          <line x1="24" y1="3" x2="24" y2="8"/><line x1="24" y1="40" x2="24" y2="45"/>
+          <line x1="3" y1="24" x2="8" y2="24"/><line x1="40" y1="24" x2="45" y2="24"/>
+          <line x1="9" y1="9" x2="13" y2="13"/><line x1="35" y1="35" x2="39" y2="39"/>
+          <line x1="9" y1="39" x2="13" y2="35"/><line x1="35" y1="13" x2="39" y2="9"/>
+        </g>
+        <circle cx="24" cy="24" r="11" fill="url(#sunG)"/>
+      </svg>`;
+    } else if (code === 1 || code === 2) {
+      // Radiant Sun with Floating Soft Cloud in Front (matching TV screenshot)
+      return `<svg width="44" height="44" viewBox="0 0 48 48">
+        <circle cx="28" cy="18" r="9" fill="#f59e0b"/>
+        <g stroke="#f59e0b" stroke-width="2" stroke-linecap="round" opacity="0.8">
+          <line x1="28" y1="4" x2="28" y2="7"/><line x1="42" y1="18" x2="39" y2="18"/>
+          <line x1="37" y1="9" x2="34" y2="12"/><line x1="37" y1="27" x2="34" y2="24"/>
+        </g>
+        <path d="M11 36 A6 6 0 0 1 18 24 A9 9 0 0 1 34 26 A6 6 0 0 1 38 36 Z" fill="#ffffff" filter="drop-shadow(0 2px 3px rgba(15,23,42,0.18))"/>
+      </svg>`;
+    } else if (code === 3 || code === 45 || code === 48) {
+      // Overcast / Fog
+      return `<svg width="44" height="44" viewBox="0 0 48 48">
+        <path d="M14 28 A7 7 0 0 1 23 16 A11 11 0 0 1 40 22 A8 8 0 0 1 42 34 Z" fill="#cbd5e1" opacity="0.75"/>
+        <path d="M8 36 A7 7 0 0 1 16 24 A10 10 0 0 1 33 27 A7 7 0 0 1 37 36 Z" fill="#ffffff" filter="drop-shadow(0 2px 3px rgba(15,23,42,0.15))"/>
+      </svg>`;
+    } else if ((code >= 51 && code <= 67) || (code >= 80 && code <= 82)) {
+      // Rain / Showers
+      return `<svg width="44" height="44" viewBox="0 0 48 48">
+        <path d="M10 27 A7 7 0 0 1 18 16 A10 10 0 0 1 35 19 A7 7 0 0 1 39 27 Z" fill="#94a3b8"/>
+        <g stroke="#38bdf8" stroke-width="2.5" stroke-linecap="round">
+          <line x1="16" y1="32" x2="14" y2="38"/>
+          <line x1="25" y1="32" x2="23" y2="38"/>
+          <line x1="33" y1="32" x2="31" y2="38"/>
+        </g>
+      </svg>`;
+    } else if (code >= 95) {
+      // Thunderstorm
+      return `<svg width="44" height="44" viewBox="0 0 48 48">
+        <path d="M10 25 A7 7 0 0 1 18 13 A10 10 0 0 1 35 16 A7 7 0 0 1 39 25 Z" fill="#475569"/>
+        <polygon points="26,24 20,33 26,33 22,42 30,30 24,30" fill="#facc15" stroke="#ca8a04" stroke-width="1"/>
+      </svg>`;
+    }
+  } else {
+    // Night
+    if (code === 0 || code === 1) {
+      // Clear Moon with Stars
+      return `<svg width="44" height="44" viewBox="0 0 48 48">
+        <path d="M28 8 A14 14 0 1 0 38 32 A13 13 0 0 1 28 8 Z" fill="#fbbf24"/>
+        <circle cx="12" cy="14" r="1.5" fill="#ffffff" opacity="0.9"/>
+        <circle cx="36" cy="12" r="1" fill="#ffffff" opacity="0.8"/>
+      </svg>`;
+    } else {
+      // Night Cloud
+      return `<svg width="44" height="44" viewBox="0 0 48 48">
+        <path d="M26 10 A11 11 0 1 0 34 28 A10 10 0 0 1 26 10 Z" fill="#fbbf24" opacity="0.85"/>
+        <path d="M10 36 A6 6 0 0 1 17 25 A9 9 0 0 1 32 27 A6 6 0 0 1 36 36 Z" fill="#94a3b8" opacity="0.9"/>
+      </svg>`;
+    }
+  }
+  return `<svg width="44" height="44" viewBox="0 0 48 48"><circle cx="24" cy="24" r="10" fill="#f59e0b"/></svg>`;
+}
+
+function openCityModal() {
+  document.getElementById('cityModal').classList.add('active');
+  const searchInp = document.getElementById('citySearchInput');
+  if (searchInp) {
+    searchInp.value = '';
+    searchInp.focus();
+  }
+  document.getElementById('citySearchResults').innerHTML = '';
+}
+
+function closeCityModal() {
+  document.getElementById('cityModal').classList.remove('active');
+}
+
+function selectCity(name, lat, lon) {
+  currentWeatherCity = { name, lat, lon };
+  try {
+    localStorage.setItem('next_inv_weather_city', JSON.stringify(currentWeatherCity));
+  } catch(e) {}
+  updateCityHeaderDisplay();
+  closeCityModal();
+  fetchWeatherForecast(true);
+}
+
+async function searchCustomCity() {
+  const q = document.getElementById('citySearchInput').value.trim();
+  const resContainer = document.getElementById('citySearchResults');
+  if (!q) return;
+  resContainer.innerHTML = '<div style="font-size:0.75rem; color:#64748b; padding:8px 0;">🔍 Searching...</div>';
+  try {
+    const res = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=6&language=en&format=json`);
+    if (!res.ok) throw new Error("Search failed");
+    const data = await res.json();
+    if (!data.results || data.results.length === 0) {
+      resContainer.innerHTML = '<div style="font-size:0.75rem; color:#ef4444; padding:8px 0;">No locations found. Try another city name.</div>';
+      return;
+    }
+    let html = '';
+    data.results.forEach(item => {
+      const label = `${item.name}${item.admin1 ? ', ' + item.admin1 : ''} (${item.country || ''})`;
+      html += `<div class="city-search-item" onclick="selectCity('${escapeHtml(item.name + (item.country ? ' (' + item.country + ')' : ''))}', ${item.latitude}, ${item.longitude})">
+        <div>
+          <b>${escapeHtml(item.name)}</b>
+          <span style="font-size:0.68rem; color:#64748b; margin-left:4px;">${escapeHtml(item.admin1 || '')} ${escapeHtml(item.country || '')}</span>
+        </div>
+        <span style="font-size:0.68rem; color:#2563eb; font-weight:700;">Select →</span>
+      </div>`;
+    });
+    resContainer.innerHTML = html;
+  } catch(e) {
+    resContainer.innerHTML = '<div style="font-size:0.75rem; color:#ef4444; padding:8px 0;">Error connecting to search service.</div>';
+  }
+}
+
+// Map WMO Weather Codes to Emoji and Descriptions
+function getWeatherIconAndDesc(code, isDay) {
+  switch (code) {
+    case 0:
+      return isDay ? { icon: "☀️", desc: "Clear Sun" } : { icon: "🌙", desc: "Clear Night" };
+    case 1:
+      return isDay ? { icon: "🌤️", desc: "Mainly Clear" } : { icon: "🌤️", desc: "Mainly Clear" };
+    case 2:
+      return { icon: "⛅", desc: "Partly Cloudy" };
+    case 3:
+      return { icon: "☁️", desc: "Overcast" };
+    case 45:
+    case 48:
+      return { icon: "🌫️", desc: "Fog" };
+    case 51:
+    case 53:
+    case 55:
+      return { icon: "🌦️", desc: "Light Drizzle" };
+    case 61:
+    case 63:
+    case 65:
+      return { icon: "🌧️", desc: "Rain" };
+    case 80:
+    case 81:
+    case 82:
+      return { icon: "🌧️", desc: "Rain Showers" };
+    case 95:
+    case 96:
+    case 99:
+      return { icon: "⛈️", desc: "Thunderstorm" };
+    default:
+      return isDay ? { icon: "🌤️", desc: "Fair" } : { icon: "🌙", desc: "Fair" };
+  }
+}
+
+let lastWeatherFetchTime = 0;
+let cachedWeatherData = null;
+
+async function fetchWeatherForecast(force = false) {
+  const nowMs = Date.now();
+  if (!force && cachedWeatherData && (nowMs - lastWeatherFetchTime < 30 * 60 * 1000)) {
+    renderWeather(cachedWeatherData);
+    return;
+  }
+
+  const updatedTimeEl = document.getElementById('weatherUpdatedTime');
+  if (updatedTimeEl) updatedTimeEl.textContent = '• Updating...';
+
+  try {
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${currentWeatherCity.lat}&longitude=${currentWeatherCity.lon}&hourly=temperature_2m,precipitation_probability,weather_code,cloud_cover,is_day,direct_normal_irradiance&forecast_days=2&timezone=auto`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error("Forecast API failed");
+    const data = await res.json();
+    cachedWeatherData = data;
+    lastWeatherFetchTime = nowMs;
+    renderWeather(data);
+    if (updatedTimeEl) updatedTimeEl.textContent = `• Updated ${new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`;
+  } catch(e) {
+    if (updatedTimeEl) updatedTimeEl.textContent = '• Offline / Failed';
+    const advisoryDesc = document.getElementById('advisoryDesc');
+    if (advisoryDesc && !cachedWeatherData) {
+      advisoryDesc.textContent = 'Unable to fetch weather forecast. Connect to the internet to get solar predictions.';
+    }
+  }
+}
+
+function renderWeather(data) {
+  if (!data || !data.hourly || !data.hourly.time) return;
+
+  const times = data.hourly.time;
+  const temps = data.hourly.temperature_2m;
+  const rains = data.hourly.precipitation_probability;
+  const codes = data.hourly.weather_code;
+  const clouds = data.hourly.cloud_cover;
+  const isDays = data.hourly.is_day;
+  const directRad = data.hourly.direct_normal_irradiance || [];
+
+  const now = new Date();
+  let startIdx = -1;
+  for (let i = 0; i < times.length; i++) {
+    const t = new Date(times[i]);
+    if (t <= now && (i === times.length - 1 || new Date(times[i + 1]) > now)) {
+      startIdx = i;
+      break;
+    }
+  }
+  if (startIdx === -1) startIdx = 0;
+
+  const count = Math.min(24, times.length - startIdx);
+  const next24 = [];
+  for (let i = 0; i < count; i++) {
+    const idx = startIdx + i;
+    next24.push({
+      time: new Date(times[idx]),
+      temp: Math.round(temps[idx]),
+      rain: rains[idx] !== null && rains[idx] !== undefined ? rains[idx] : 0,
+      code: codes[idx] !== null && codes[idx] !== undefined ? codes[idx] : 0,
+      cloud: clouds[idx] !== null && clouds[idx] !== undefined ? clouds[idx] : 0,
+      isDay: isDays[idx] === 1,
+      irradiance: directRad[idx] ? Math.round(directRad[idx]) : 0,
+      isNow: (i === 0)
+    });
+  }
+
+  // --- Calculate Daylight Solar Advisory ---
+  const daylightHours = next24.filter(h => h.isDay);
+  
+  let avgCloud = 0;
+  let maxRain = 0;
+  let peakIrradiance = 0;
+
+  if (daylightHours.length > 0) {
+    avgCloud = Math.round(daylightHours.reduce((acc, h) => acc + h.cloud, 0) / daylightHours.length);
+    maxRain = Math.max(...daylightHours.map(h => h.rain));
+    peakIrradiance = Math.max(...daylightHours.map(h => h.irradiance));
+  } else {
+    avgCloud = Math.round(next24.reduce((acc, h) => acc + h.cloud, 0) / next24.length);
+    maxRain = Math.max(...next24.map(h => h.rain));
+  }
+
+  // Metric Summary Boxes
+  const sumSolar = document.getElementById('summarySolar');
+  if (sumSolar) {
+    if (peakIrradiance > 600 || avgCloud < 40) {
+      sumSolar.innerHTML = `<span style="color:#059669;">☀️ Strong</span>`;
+    } else if (peakIrradiance > 300 || avgCloud < 70) {
+      sumSolar.innerHTML = `<span style="color:#d97706;">⛅ Moderate</span>`;
+    } else {
+      sumSolar.innerHTML = `<span style="color:#dc2626;">☁️ Weak</span>`;
+    }
+  }
+
+  const sumRain = document.getElementById('summaryRain');
+  if (sumRain) {
+    sumRain.innerHTML = `${maxRain}%`;
+    sumRain.style.color = (maxRain >= 50) ? '#2563eb' : '#1e293b';
+  }
+
+  const sumCloud = document.getElementById('summaryCloud');
+  if (sumCloud) {
+    sumCloud.innerHTML = `${avgCloud}%`;
+    sumCloud.style.color = (avgCloud >= 70) ? '#dc2626' : (avgCloud < 40 ? '#059669' : '#1e293b');
+  }
+
+  // Battery Decision & Strategy Advisory
+  const advBanner = document.getElementById('solarAdvisoryBanner');
+  const advTitle = document.getElementById('advisoryTitle');
+  const advDesc = document.getElementById('advisoryDesc');
+  const advStats = document.getElementById('advisoryStats');
+
+  if (advBanner && advTitle && advDesc && advStats) {
+    if (avgCloud < 45 && maxRain < 40) {
+      advBanner.className = 'solar-advisory sunny';
+      advTitle.innerHTML = '☀️ <b>High Solar Expected: Bill Reduction Mode</b>';
+      advDesc.innerHTML = '<b>Let battery discharge tonight to power loads!</b> Tomorrow brings strong sunshine to fully recharge your battery, maximizing CEB electricity bill savings.';
+      advStats.innerHTML = `<span>☀️ Peak Solar: ~${peakIrradiance || '750+'} W/m²</span> <span>☁️ Avg Clouds: ${avgCloud}%</span> <span>💧 Max Rain: ${maxRain}%</span>`;
+    } else if (avgCloud >= 70 || maxRain >= 60) {
+      advBanner.className = 'solar-advisory rainy';
+      advTitle.innerHTML = '⛈️ <b>Poor Solar Warning: Emergency Grid Charge</b>';
+      advDesc.innerHTML = '<b>Charge battery to full from grid tonight!</b> Tomorrow has heavy clouds and rain. Preserve full battery reserve for blackouts and emergency backup.';
+      advStats.innerHTML = `<span>⛈️ Rain Risk: ${maxRain}%</span> <span>☁️ Heavy Clouds: ${avgCloud}%</span> <span>⚡ Grid Charge Recommended</span>`;
+    } else {
+      advBanner.className = 'solar-advisory moderate';
+      advTitle.innerHTML = '⛅ <b>Moderate Solar Expected: Balanced Mode</b>';
+      advDesc.innerHTML = '<b>Maintain normal battery buffer tonight (~30-40%).</b> Tomorrow will have partly cloudy skies with intermittent solar generation.';
+      advStats.innerHTML = `<span>⛅ Solar: Moderate</span> <span>☁️ Avg Clouds: ${avgCloud}%</span> <span>💧 Rain Risk: ${maxRain}%</span>`;
+    }
+  }
+
+  // Render 24-Hour Timeline
+  const timelineEl = document.getElementById('weatherTimeline');
+  if (timelineEl) {
+    let timelineHtml = '';
+    next24.forEach(h => {
+      const info = getWeatherIconAndDesc(h.code, h.isDay);
+      const timeStr = h.isNow ? 'NOW' : h.time.toLocaleTimeString([], { hour: 'numeric', hour12: true }).toUpperCase();
+
+      let solarSubText = '🌙 Night';
+      if (h.isDay) {
+        if (h.irradiance > 500 || h.cloud < 30) {
+          solarSubText = `☀️ ${h.irradiance ? h.irradiance + ' W/m²' : 'Strong Sun'}`;
+        } else if (h.irradiance > 200 || h.cloud < 65) {
+          solarSubText = `⛅ ${h.irradiance ? h.irradiance + ' W/m²' : 'Moderate'}`;
+        } else {
+          solarSubText = `☁️ Low Solar`;
+        }
+      }
+
+      timelineHtml += `
+      <div class="weather-hour-col ${h.isNow ? 'now' : ''} ${!h.isDay ? 'night-col' : ''}">
+        <div class="weather-col-header">${timeStr}</div>
+        <div class="weather-col-body">
+          <div class="weather-col-icon" title="${escapeHtml(info.desc)}">
+            ${getWeatherSvgIcon(h.code, h.isDay)}
+          </div>
+          <div class="weather-col-temp">${h.temp}<span class="temp-deg">°</span></div>
+          <div class="weather-col-sub">${solarSubText}</div>
+        </div>
+        <div class="weather-col-rain ${h.rain >= 40 ? 'rain-alert' : ''}">
+          <span>${h.rain}%</span>
+          <svg width="10" height="11" viewBox="0 0 10 12" fill="currentColor"><path d="M5 0C5 0 0 6 0 8.5C0 10.4 2.2 12 5 12C7.8 12 10 10.4 10 8.5C10 6 5 0 5 0Z"/></svg>
+        </div>
+      </div>`;
+    });
+    timelineEl.innerHTML = timelineHtml;
+  }
+}
+
+// Light-dismiss modals on background click or Esc key
+document.querySelectorAll('.modal-overlay').forEach(overlay => {
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) {
+      overlay.classList.remove('active');
+    }
+  });
+});
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    document.querySelectorAll('.modal-overlay.active').forEach(m => m.classList.remove('active'));
+  }
+});
+
 setInterval(refreshData, 2000);
+setInterval(() => fetchWeatherForecast(false), 30 * 60 * 1000); // 30 min weather refresh
 refreshData();
+loadMacros();
+initWeatherCity();
+fetchWeatherForecast();
 </script>
 </body>
 </html>

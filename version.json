@@ -1,5 +1,5 @@
 {
-  "version": "1.0.3",
+  "version": "1.1.7",
   "bin_url": "https://raw.githubusercontent.com/prasadmanjulago/Next-inverter-wifi/main/firmware.bin",
-  "notes": "v1.0.3: ThingsBoard Cloud Integration with multi-sample interval averaging (10s/15s/30s/60s), Clean UI"
+  "notes": "v1.1.7: Add JK-BMS Bluetooth Low Energy (BLE) integration, 14S cell monitor with Blue (Highest) & Red (Lowest) highlights, Delta V, 3 temperatures, BLE scanner & password setup"
 }

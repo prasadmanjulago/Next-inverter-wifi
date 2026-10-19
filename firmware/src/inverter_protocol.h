@@ -8,6 +8,7 @@ struct InverterTelemetry {
     // Grid (AC In)
     float grid_voltage = 0.0;
     float grid_frequency = 0.0;
+    float grid_watts = 0.0;
 
     // Inverter AC Output
     float ac_output_voltage = 0.0;
@@ -120,23 +121,16 @@ public:
         // tokens[14] is battery voltage from SCC
         data.battery_discharge_current = tokens[15].toInt();
         
-        // Calculate net battery watts (Discharge - Charge)
-        if (data.battery_charge_current > 0) {
-            data.battery_power_watts = (float)data.battery_charge_current * data.battery_voltage;
-        } else if (data.battery_discharge_current > 0) {
-            data.battery_power_watts = -(float)data.battery_discharge_current * data.battery_voltage;
-        } else {
-            data.battery_power_watts = 0.0;
-        }
-
         if (count > 16) {
             data.device_status_bits = tokens[16];
             if (data.device_status_bits.length() >= 8) {
                 data.solar_charging = (data.device_status_bits[2] == '1');
                 data.grid_charging = (data.device_status_bits[4] == '1');
-                data.load_on_inverter = (data.device_status_bits[6] == '1');
+                data.load_on_inverter = (data.mode_char == 'B' || data.device_status_bits[6] == '1');
             }
         }
+
+        updatePowerCalculations(data);
 
         data.valid = true;
         data.last_update = millis();
@@ -156,6 +150,44 @@ public:
             case 'H': data.mode_string = "Power Saving"; break;
             default:  data.mode_string = "Unknown (" + String(data.mode_char) + ")"; break;
         }
+        updatePowerCalculations(data);
+    }
+
+    static void updatePowerCalculations(InverterTelemetry &data) {
+        // Sanity guards against serial noise or bit slips
+        if (data.battery_discharge_current > 150) data.battery_discharge_current = 0;
+        if (data.battery_charge_current > 120) data.battery_charge_current = 0;
+        if (data.battery_voltage < 30.0f || data.battery_voltage > 68.0f) data.battery_voltage = 52.0f;
+        if (data.ac_output_watts > 7500) data.ac_output_watts = 0;
+        if (data.pv_watts > 7500.0f) data.pv_watts = 0.0f;
+
+        float bat_chg_w = (data.battery_charge_current > 0) ? ((float)data.battery_charge_current * data.battery_voltage) : 0.0f;
+        float bat_dis_w = (data.battery_discharge_current > 0) ? ((float)data.battery_discharge_current * data.battery_voltage) : 0.0f;
+
+        // Calculate net battery watts: positive (+) when charging, negative (-) when discharging
+        if (data.battery_charge_current > 0) {
+            data.battery_power_watts = bat_chg_w;
+        } else if (data.battery_discharge_current > 0) {
+            data.battery_power_watts = -bat_dis_w;
+        } else {
+            data.battery_power_watts = 0.0f;
+        }
+
+        // Calculate Grid Watts (Active utility power supplying loads and/or charging battery)
+        if (data.grid_voltage >= 90.0f) {
+            if (data.mode_char == 'L') {
+                // In Line Mode (Grid Bypass): Grid feeds the AC loads directly through bypass relay, plus any grid battery charging
+                float total_demand = (float)data.ac_output_watts + (data.grid_charging ? bat_chg_w : 0.0f);
+                data.grid_watts = (total_demand > data.pv_watts) ? (total_demand - data.pv_watts) : 0.0f;
+            } else if (data.grid_charging) {
+                // In Battery or Solar mode with AC charging enabled, grid only charges the battery
+                data.grid_watts = bat_chg_w;
+            } else {
+                data.grid_watts = 0.0f;
+            }
+        } else {
+            data.grid_watts = 0.0f;
+        }
     }
 };
 
@@ -163,6 +195,7 @@ struct InverterAccumulator {
     int count = 0;
     double sum_grid_voltage = 0;
     double sum_grid_frequency = 0;
+    double sum_grid_watts = 0;
     double sum_ac_output_voltage = 0;
     double sum_ac_output_frequency = 0;
     double sum_ac_output_va = 0;
@@ -181,6 +214,7 @@ struct InverterAccumulator {
         count++;
         sum_grid_voltage += t.grid_voltage;
         sum_grid_frequency += t.grid_frequency;
+        sum_grid_watts += t.grid_watts;
         sum_ac_output_voltage += t.ac_output_voltage;
         sum_ac_output_frequency += t.ac_output_frequency;
         sum_ac_output_va += t.ac_output_va;
@@ -200,6 +234,7 @@ struct InverterAccumulator {
         count = 0;
         sum_grid_voltage = 0;
         sum_grid_frequency = 0;
+        sum_grid_watts = 0;
         sum_ac_output_voltage = 0;
         sum_ac_output_frequency = 0;
         sum_ac_output_va = 0;
