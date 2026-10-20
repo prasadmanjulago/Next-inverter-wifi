@@ -567,6 +567,8 @@ const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
     align-items: center;
     border-bottom: 1px solid #f1f5f9;
     padding-bottom: 8px;
+    flex-wrap: wrap;
+    gap: 8px;
   }
   .bms-title {
     font-size: 0.95rem;
@@ -581,13 +583,64 @@ const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
     color: #64748b;
     margin-top: 2px;
   }
+  .bms-header-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    flex-wrap: wrap;
+  }
+  .btn-bms-action {
+    border: none;
+    padding: 5px 9px;
+    border-radius: 8px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.15s ease-in-out;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+  }
+  .btn-bms-on {
+    background: #f0fdf4;
+    color: #166534;
+    border: 1px solid #bbf7d0;
+  }
+  .btn-bms-on:hover {
+    background: #16a34a;
+    color: #ffffff;
+    border-color: #16a34a;
+  }
+  .btn-bms-on.active {
+    background: #16a34a;
+    color: #ffffff;
+    border-color: #15803d;
+    box-shadow: inset 0 2px 4px rgba(0,0,0,0.15);
+  }
+  .btn-bms-off {
+    background: #f8fafc;
+    color: #64748b;
+    border: 1px solid #cbd5e1;
+  }
+  .btn-bms-off:hover {
+    background: #ef4444;
+    color: #ffffff;
+    border-color: #ef4444;
+  }
+  .btn-bms-off.active {
+    background: #64748b;
+    color: #ffffff;
+    border-color: #475569;
+    box-shadow: inset 0 2px 4px rgba(0,0,0,0.15);
+  }
   .btn-setup-bms {
     background: #0f172a;
     color: #ffffff;
     border: none;
-    padding: 5px 10px;
+    padding: 5px 9px;
     border-radius: 8px;
-    font-size: 0.72rem;
+    font-size: 0.7rem;
     font-weight: 700;
     cursor: pointer;
     transition: all 0.15s;
@@ -1351,8 +1404,10 @@ const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
       <div class="bms-title">🔋 14S Nissan Leaf — JK-BMS Monitor</div>
       <div id="bmsStatusSub" class="bms-subtitle">Connecting via Bluetooth BLE...</div>
     </div>
-    <div style="display:flex; align-items:center; gap:6px;">
-      <button class="btn-setup-bms" onclick="openBmsModal()">⚙️ Setup BMS</button>
+    <div class="bms-header-actions">
+      <button id="btnBmsOn" class="btn-bms-action btn-bms-on" onclick="setBmsBluetooth(true)" title="Turn ON Bluetooth connection to JK-BMS">🔵 Turn On</button>
+      <button id="btnBmsOff" class="btn-bms-action btn-bms-off" onclick="setBmsBluetooth(false)" title="Turn OFF Bluetooth connection">⚪ Turn Off</button>
+      <button class="btn-setup-bms" onclick="openBmsModal()" title="Setup BMS">⚙️ Setup</button>
     </div>
   </div>
 
@@ -1902,6 +1957,18 @@ async function refreshData() {
 function renderBmsData(bms) {
   if (!bms) return;
   const statusSub = document.getElementById('bmsStatusSub');
+  const btnOn = document.getElementById('btnBmsOn');
+  const btnOff = document.getElementById('btnBmsOff');
+  if (btnOn && btnOff) {
+    if (bms.enabled) {
+      btnOn.classList.add('active');
+      btnOff.classList.remove('active');
+    } else {
+      btnOn.classList.remove('active');
+      btnOff.classList.add('active');
+    }
+  }
+
   if (bms.connected && bms.valid) {
     statusSub.innerHTML = `<span style="color:#059669; font-weight:700;">🟢 Connected: ${escapeHtml(bms.name || 'JK-BMS')}</span> (RSSI: ${bms.rssi} dBm${bms.balancing ? ' • ⚖️ Balancing' : ''})`;
   } else if (bms.connected) {
@@ -1910,7 +1977,7 @@ function renderBmsData(bms) {
   } else if (bms.enabled) {
     statusSub.innerHTML = `<span style="color:#d97706; font-weight:700;">🟡 ${escapeHtml(bms.status || 'Connecting...')}</span>`;
   } else {
-    statusSub.innerHTML = `<span style="color:#64748b;">⚪ Disabled (Click "⚙️ Setup BMS" to connect)</span>`;
+    statusSub.innerHTML = `<span style="color:#64748b;">⚪ Bluetooth Turned OFF (Click "🔵 Turn On" to connect)</span>`;
   }
 
   // Delta V Pill
@@ -1985,6 +2052,33 @@ function renderBmsData(bms) {
     `;
   }
   grid.innerHTML = html;
+}
+
+// -------------------------------------------------------------
+// JK-BMS Bluetooth Quick Actions (Turn On / Turn Off)
+// -------------------------------------------------------------
+async function setBmsBluetooth(enable) {
+  const btnOn = document.getElementById('btnBmsOn');
+  const btnOff = document.getElementById('btnBmsOff');
+  const statusSub = document.getElementById('bmsStatusSub');
+
+  if (btnOn) btnOn.disabled = true;
+  if (btnOff) btnOff.disabled = true;
+  if (statusSub) {
+    statusSub.innerHTML = `<span style="color:#2563eb; font-weight:700;">⏳ Turning Bluetooth ${enable ? 'ON' : 'OFF'}...</span>`;
+  }
+
+  try {
+    const res = await fetch(enable ? '/api/bms_on' : '/api/bms_off', { method: 'POST' });
+    if (res.ok) {
+      setTimeout(() => { refreshData(); }, 700);
+    }
+  } catch(e) {
+    if (statusSub) statusSub.innerHTML = `<span style="color:#dc2626;">Network error</span>`;
+  } finally {
+    if (btnOn) btnOn.disabled = false;
+    if (btnOff) btnOff.disabled = false;
+  }
 }
 
 // -------------------------------------------------------------

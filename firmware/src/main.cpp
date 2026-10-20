@@ -968,16 +968,17 @@ void handleBmsConfigGet() {
 }
 
 void handleBmsConfigPost() {
+    auto& mgr = JkBmsManager::getInstance();
     bool enabled = (server.arg("enabled") == "true" || server.arg("enabled") == "1");
-    String mac = server.hasArg("mac") ? server.arg("mac") : "";
+    String mac = (server.hasArg("mac") && server.arg("mac").length() >= 12) ? server.arg("mac") : mgr.data.device_mac;
     mac.trim();
     mac.toUpperCase();
-    String name = server.hasArg("name") ? server.arg("name") : "";
+    String name = (server.hasArg("name") && server.arg("name").length() > 0) ? server.arg("name") : mgr.data.device_name;
     name.trim();
-    String pin = server.hasArg("pin") ? server.arg("pin") : "1234";
+    String pin = (server.hasArg("pin") && server.arg("pin").length() > 0) ? server.arg("pin") : mgr.data.pin;
     pin.trim();
 
-    JkBmsManager::getInstance().saveConfig(enabled, mac, name, pin);
+    mgr.saveConfig(enabled, mac, name, pin);
     server.send(200, "text/plain", "JK-BMS settings saved successfully!");
 }
 
@@ -1129,6 +1130,16 @@ void setup() {
     server.on("/api/bms_scan", handleBmsScan);
     server.on("/api/bms_config", HTTP_GET, handleBmsConfigGet);
     server.on("/api/bms_config", HTTP_POST, handleBmsConfigPost);
+    server.on("/api/bms_on", HTTP_POST, []() {
+        auto& mgr = JkBmsManager::getInstance();
+        mgr.saveConfig(true, mgr.data.device_mac, mgr.data.device_name, mgr.data.pin);
+        server.send(200, "text/plain", "Bluetooth turned ON");
+    });
+    server.on("/api/bms_off", HTTP_POST, []() {
+        auto& mgr = JkBmsManager::getInstance();
+        mgr.saveConfig(false, mgr.data.device_mac, mgr.data.device_name, mgr.data.pin);
+        server.send(200, "text/plain", "Bluetooth turned OFF");
+    });
     server.on("/api/bms_telemetry", handleBmsTelemetry);
 
     // Browser Direct Web OTA (/update)

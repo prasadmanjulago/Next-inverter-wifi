@@ -138,20 +138,20 @@ public:
 
     void saveConfig(bool enabled, const String& mac, const String& name, const String& pin) {
         data.enabled = enabled;
-        data.device_mac = mac;
-        data.device_name = name;
-        data.pin = pin;
+        if (mac.length() >= 12) data.device_mac = mac;
+        if (name.length() > 0) data.device_name = name;
+        if (pin.length() > 0) data.pin = pin;
 
         Preferences prefs;
         prefs.begin("jkbms", false);
         prefs.putBool("enabled", enabled);
-        prefs.putString("mac", mac);
-        prefs.putString("name", name);
-        prefs.putString("pin", pin);
+        if (data.device_mac.length() >= 12) prefs.putString("mac", data.device_mac);
+        if (data.device_name.length() > 0) prefs.putString("name", data.device_name);
+        if (data.pin.length() > 0) prefs.putString("pin", data.pin);
         prefs.end();
 
         Serial.printf("[JK-BMS] Config saved: Enabled=%s, MAC=%s, Name=%s\n",
-                      enabled ? "YES" : "NO", mac.c_str(), name.c_str());
+                      enabled ? "YES" : "NO", data.device_mac.c_str(), data.device_name.c_str());
 
         if (!enabled && pClient != nullptr && pClient->isConnected()) {
             pClient->disconnect();
