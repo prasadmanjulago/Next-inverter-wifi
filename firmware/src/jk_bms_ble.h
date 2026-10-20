@@ -213,6 +213,7 @@ public:
         data.rx_packet_count++;
         data.rx_byte_count += length;
         data.notify_handle = hdl;
+        data.last_update = millis();
 
         for (size_t i = 0; i < length; i++) {
             size_t nextHead = (rxHead + 1) % RX_RING_SIZE;
@@ -293,6 +294,7 @@ private:
         drainRxRingBuffer();
 
         // 3. Stalled / Unresponsive Connection Watchdog
+        // Only trigger if no packets received for > 35s to reconnect cleanly
         if (data.connected && !data.data_valid && (now - connectTime > 35000)) {
             data.addLog("Watchdog: No data stream in 35s. Reconnecting...");
             if (pClient) pClient->disconnect();
@@ -303,24 +305,11 @@ private:
             return;
         }
 
-        // 4. While waiting for data, send query every 3 seconds
-        // Once data_valid is true, stop sending queries to avoid BMS beeping!
-        if (data.connected && !data.data_valid && (now - lastHeartbeatTime >= 3000)) {
-            lastHeartbeatTime = now;
-            queryCount++;
-            if (queryCount % 4 == 0) {
-                sendModbusQuery();
-            } else {
-                sendBmsCommand(0x96);
-            }
-        }
-
-        // 5. Keep-alive heartbeat: if live stream stalls for > 25 seconds
-        if (data.connected && data.data_valid && (now - data.last_update > 25000)) {
-            data.addLog("Watchdog: Stream stalled (>25s). Re-sending 0x96...");
-            sendBmsCommand(0x96);
-            data.last_update = now;
-        }
+        // ZERO BEEPING POLICY:
+        // Do NOT send periodic query commands! The JK-BMS hardware buzzer beeps on
+        // every single received command packet. Once 0x96 is transmitted on connection,
+        // the BMS auto-streams Frame 0x02 continuously over BLE notifications.
+        // Leaving the BLE transmitter silent ensures 100% silent, buzzer-free operation.
     }
 
     void connectToBms() {
@@ -417,12 +406,13 @@ private:
         lastConnectAttempt = millis();
         lastHeartbeatTime = millis();
 
-        // Initial trigger: Send 0x97 once, wait 200ms, send 0x96 once
+        // Initial handshake: Send 0x97 then 0x96 ONCE on connect to start auto-streaming Frame 0x02
+        // Absolutely zero periodic queries sent while streaming, ensuring 100% silent operation (no beeping).
         vTaskDelay(pdMS_TO_TICKS(150));
         sendBmsCommand(0x97);
         vTaskDelay(pdMS_TO_TICKS(200));
         sendBmsCommand(0x96);
-        data.addLog("Stream initiated (0x97 + 0x96 sent)");
+        data.addLog("Stream initiated (0x97 + 0x96 sent once)");
     }
 
     void drainRxRingBuffer() {
@@ -448,10 +438,12 @@ private:
             frameBuffer.erase(frameBuffer.begin(), frameBuffer.begin() + 300);
         }
 
-        // Check for JK02 / JK04 preamble: 0x55 0xAA 0xEB 0x90
+        // Check for JK02 / JK04 preamble: 0x55 0xAA 0xEB 0x90 or 0xAA 0x55 0x90 0xEB
         for (size_t i = 0; i + 4 <= frameBuffer.size(); i++) {
-            if (frameBuffer[i] == 0x55 && frameBuffer[i+1] == 0xAA &&
-                frameBuffer[i+2] == 0xEB && frameBuffer[i+3] == 0x90) {
+            if ((frameBuffer[i] == 0x55 && frameBuffer[i+1] == 0xAA &&
+                 frameBuffer[i+2] == 0xEB && frameBuffer[i+3] == 0x90) ||
+                (frameBuffer[i] == 0xAA && frameBuffer[i+1] == 0x55 &&
+                 frameBuffer[i+2] == 0x90 && frameBuffer[i+3] == 0xEB)) {
 
                 if (i > 0) {
                     frameBuffer.erase(frameBuffer.begin(), frameBuffer.begin() + i);
@@ -490,7 +482,7 @@ private:
         if (len < 10) return;
 
         // Format 1: JK02 Cell Info Frame (Record Type 0x02)
-        if (buf[0] == 0x55 && buf[1] == 0xAA && buf[2] == 0xEB && buf[3] == 0x90 && buf[4] == 0x02) {
+        if (((buf[0] == 0x55 && buf[1] == 0xAA) || (buf[0] == 0xAA && buf[1] == 0x55)) && buf[4] == 0x02) {
             float minV = 99.0f;
             float maxV = -99.0f;
             int minIdx = 1;
@@ -567,13 +559,13 @@ private:
         }
 
         // Format 1b: Frame 0x03 (Device Info)
-        if (buf[0] == 0x55 && buf[1] == 0xAA && buf[2] == 0xEB && buf[3] == 0x90 && buf[4] == 0x03) {
+        if (((buf[0] == 0x55 && buf[1] == 0xAA) || (buf[0] == 0xAA && buf[1] == 0x55)) && buf[4] == 0x03) {
             data.addLog("Received Frame 0x03 (Device Info)");
             return;
         }
 
         // Format 2: JK04 / Tag-Length-Value (Record Type 0x01)
-        if (buf[0] == 0x55 && buf[1] == 0xAA && buf[2] == 0xEB && buf[3] == 0x90 && buf[4] == 0x01) {
+        if (((buf[0] == 0x55 && buf[1] == 0xAA) || (buf[0] == 0xAA && buf[1] == 0x55)) && buf[4] == 0x01) {
             size_t idx = 11;
             float minV = 99.0f;
             float maxV = -99.0f;
