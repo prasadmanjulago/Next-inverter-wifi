@@ -7,13 +7,14 @@
 
 // -----------------------------------------------------------------------------
 // JK-BMS Bluetooth Low Energy (BLE) Client & Decoder
-// Dual-Core FreeRTOS Architecture:
-// - Pinned to Core 0 (Background BLE)
-// - Leaves Core 1 100% Free for Web Server, Dashboard & Inverter UART
-// - Lock-Free Ring Buffer, Zero-Deadlock, Coexistence-Friendly
+// Open-Source Auto-Streaming Architecture (syssi/esphome-jk-bms standard)
+// - NO Auth / PIN spam (Pin is only for settings, NOT for reading telemetry)
+// - Sends 0x97 and 0x96 ONCE on connect -> BMS auto-streams Frame 0x02
+// - Subscribes to notify channels across 0xFFE0 & 0xFF10
+// - ZERO constant beeping, ZERO radio saturation
+// - Dedicated FreeRTOS Task pinned to Core 0 (WebServer on Core 1 remains 100% fluid)
 // -----------------------------------------------------------------------------
 
-// Global OTA flag from main.cpp
 extern bool isOtaUpdating;
 
 struct JkBmsTelemetry {
@@ -22,7 +23,7 @@ struct JkBmsTelemetry {
     bool data_valid = false;
     String device_name = "";
     String device_mac = "";
-    String pin = "114433";
+    String pin = "";
     int rssi = 0;
 
     int cell_count = 14;              // Default 14S Nissan Leaf pack
@@ -87,7 +88,7 @@ public:
         data.enabled = prefs.getBool("enabled", false);
         data.device_mac = prefs.getString("mac", "");
         data.device_name = prefs.getString("name", "");
-        data.pin = prefs.getString("pin", "114433");
+        data.pin = prefs.getString("pin", "");
         prefs.end();
 
         NimBLEDevice::init("NextInverter-BLE");
@@ -95,13 +96,11 @@ public:
         NimBLEDevice::setMTU(517);
         NimBLEDevice::setSecurityAuth(false, false, false);
 
-        Serial.printf("[JK-BMS] Initialized. Enabled=%s, MAC=%s, Name=%s, PIN=%s\n",
+        Serial.printf("[JK-BMS] Initialized. Enabled=%s, MAC=%s, Name=%s\n",
                       data.enabled ? "YES" : "NO",
                       data.device_mac.c_str(),
-                      data.device_name.c_str(),
-                      data.pin.c_str());
+                      data.device_name.c_str());
 
-        // Spawn dedicated BLE FreeRTOS task on Core 0
         startBleTask();
     }
 
@@ -117,14 +116,14 @@ public:
                 this,
                 1,
                 &taskHandle,
-                0 // Core 0 (Leaves Core 1 100% free for Web Server)
+                0 // Core 0 (Leaves Core 1 completely free for WebServer)
             );
         }
     }
 
     void taskLoop() {
         while (true) {
-            // During wireless OTA upload, pause BLE completely so Wi-Fi has 100% bandwidth
+            // While receiving OTA updates, pause BLE completely
             if (isOtaUpdating) {
                 vTaskDelay(pdMS_TO_TICKS(500));
                 continue;
@@ -134,8 +133,8 @@ public:
                 stepBle();
             }
 
-            // Yield 50ms so Core 0 stays relaxed
-            vTaskDelay(pdMS_TO_TICKS(50));
+            // Relaxed 100ms task rate: keeps Core 0 cool and leaves plenty of 2.4GHz RF for Wi-Fi
+            vTaskDelay(pdMS_TO_TICKS(100));
         }
     }
 
@@ -153,16 +152,15 @@ public:
         prefs.putString("pin", pin);
         prefs.end();
 
-        Serial.printf("[JK-BMS] Config saved: Enabled=%s, MAC=%s, Name=%s, PIN=%s\n",
-                      enabled ? "YES" : "NO", mac.c_str(), name.c_str(), pin.c_str());
+        Serial.printf("[JK-BMS] Config saved: Enabled=%s, MAC=%s, Name=%s\n",
+                      enabled ? "YES" : "NO", mac.c_str(), name.c_str());
 
         if (!enabled && pClient != nullptr && pClient->isConnected()) {
             pClient->disconnect();
             data.connected = false;
             data.data_valid = false;
             data.last_status = "Disabled";
-            pCharWrite1 = nullptr;
-            pCharWrite2 = nullptr;
+            allWriteChars.clear();
             allNotifyChars.clear();
         }
     }
@@ -207,12 +205,11 @@ public:
         Serial.printf("[JK-BMS] BLE Scan complete. Found %d devices.\n", (int)scanResults.size());
     }
 
-    // Called from Arduino main loop (kept ultra-lightweight)
     void loop() {
-        // BLE execution is isolated to Core 0 task.
+        // BLE runs in dedicated FreeRTOS task on Core 0
     }
 
-    // Ultra-fast, zero-allocation notification callback running in NimBLE Host Task
+    // Ultra-fast lock-free ring buffer
     void onNotifyRaw(uint16_t hdl, const uint8_t* pData, size_t length) {
         if (pData == nullptr || length == 0) return;
         data.rx_packet_count++;
@@ -229,7 +226,7 @@ public:
     }
 
     bool sendBmsCommand(uint8_t cmdType) {
-        if (pCharWrite1 == nullptr && pCharWrite2 == nullptr) return false;
+        if (allWriteChars.empty()) return false;
         uint8_t frame[20] = {0};
         frame[0] = 0xAA;
         frame[1] = 0x55;
@@ -242,68 +239,32 @@ public:
         frame[19] = sum;
 
         data.tx_cmd_count++;
-        // Strictly Write Without Response (false) - 100% non-blocking!
         bool ok = false;
-        if (pCharWrite1 != nullptr) {
-            ok = pCharWrite1->writeValue(frame, sizeof(frame), false);
+        for (auto* wCh : allWriteChars) {
+            if (wCh->writeValue(frame, sizeof(frame), false)) {
+                ok = true;
+            }
         }
-        if (pCharWrite2 != nullptr) {
-            pCharWrite2->writeValue(frame, sizeof(frame), false);
-        }
-
         char buf[36];
         snprintf(buf, sizeof(buf), "TX 0x%02X: %s", cmdType, ok ? "OK" : "FAIL");
         data.addLog(String(buf));
         return ok;
     }
 
-    bool sendAuthFrame(const String& pin) {
-        if ((pCharWrite1 == nullptr && pCharWrite2 == nullptr) || pin.length() == 0) return false;
-        uint8_t frame[20] = {0};
-        frame[0] = 0xAA;
-        frame[1] = 0x55;
-        frame[2] = 0x90;
-        frame[3] = 0xEB;
-        frame[4] = 0x05; // Auth instruction
-        frame[5] = (uint8_t)std::min((size_t)10, (size_t)pin.length());
-        for (size_t i = 0; i < frame[5]; i++) {
-            frame[6 + i] = (uint8_t)pin[i];
-        }
-        uint8_t sum = 0;
-        for (int i = 0; i < 19; i++) sum += frame[i];
-        frame[19] = sum;
-
-        data.tx_cmd_count++;
-        // Strictly Write Without Response (false) - 100% non-blocking!
-        bool ok = false;
-        if (pCharWrite1 != nullptr) {
-            ok = pCharWrite1->writeValue(frame, sizeof(frame), false);
-        }
-        if (pCharWrite2 != nullptr) {
-            pCharWrite2->writeValue(frame, sizeof(frame), false);
-        }
-
-        data.addLog("TX Auth (" + pin + "): " + (ok ? "OK" : "FAIL"));
-        return ok;
-    }
-
 private:
     TaskHandle_t taskHandle = nullptr;
     NimBLEClient* pClient = nullptr;
-    NimBLERemoteCharacteristic* pCharWrite1 = nullptr;
-    NimBLERemoteCharacteristic* pCharWrite2 = nullptr;
+    std::vector<NimBLERemoteCharacteristic*> allWriteChars;
     std::vector<NimBLERemoteCharacteristic*> allNotifyChars;
     unsigned long lastConnectAttempt = 0;
-    unsigned long lastQueryTime = 0;
+    unsigned long lastHeartbeatTime = 0;
     unsigned long connectTime = 0;
 
-    // Fast lock-free ring buffer for notification reception
     static const size_t RX_RING_SIZE = 1024;
     uint8_t rxRing[RX_RING_SIZE];
     volatile size_t rxHead = 0;
     volatile size_t rxTail = 0;
 
-    // Reassembly buffer in main thread
     std::vector<uint8_t> frameBuffer;
 
     JkBmsManager() {}
@@ -313,45 +274,31 @@ private:
 
         // 1. Connection Management
         if (!data.connected) {
-            if (now - lastConnectAttempt >= 6000) {
+            if (now - lastConnectAttempt >= 7000) {
                 lastConnectAttempt = now;
                 connectToBms();
             }
             return;
         }
 
-        // 2. Drain incoming BLE ring buffer safely in task thread (Zero Deadlock)
+        // 2. Drain incoming BLE ring buffer
         drainRxRingBuffer();
 
         // 3. Stalled / Unresponsive Connection Watchdog
         if (data.connected && !data.data_valid && (now - connectTime > 30000)) {
-            data.addLog("Watchdog: No telemetry in 30s. Reconnecting...");
+            data.addLog("Watchdog: No data stream in 30s. Reconnecting...");
             if (pClient) pClient->disconnect();
             data.connected = false;
             data.last_status = "Connection Timeout (No Packets)";
-            pCharWrite1 = nullptr;
-            pCharWrite2 = nullptr;
+            allWriteChars.clear();
             allNotifyChars.clear();
             return;
         }
 
-        if (data.connected && data.data_valid && (now - data.last_update > 20000)) {
-            data.addLog("Watchdog: Live stream stalled (>20s). Reconnecting...");
-            if (pClient) pClient->disconnect();
-            data.connected = false;
-            data.data_valid = false;
-            data.last_status = "Connection Lost (Timeout)";
-            pCharWrite1 = nullptr;
-            pCharWrite2 = nullptr;
-            allNotifyChars.clear();
-            return;
-        }
-
-        // 4. Periodic Query Scheduling (Using Write Without Response ONLY)
-        unsigned long queryInterval = data.data_valid ? 5000 : 2500;
-        if (data.connected && (now - lastQueryTime >= queryInterval)) {
-            lastQueryTime = now;
+        if (data.connected && data.data_valid && (now - data.last_update > 25000)) {
+            data.addLog("Watchdog: Stream stalled (>25s). Re-sending 0x96...");
             sendBmsCommand(0x96);
+            data.last_update = now;
         }
     }
 
@@ -362,7 +309,7 @@ private:
         if (pClient == nullptr) {
             pClient = NimBLEDevice::createClient();
             pClient->setClientCallbacks(new ClientCallbacks(this), false);
-            // Coexistence-friendly: 30ms-50ms interval (24-40 * 1.25ms), 4.0s supervision timeout
+            // Coexistence-friendly: 30ms-50ms interval, 4.0s supervision timeout
             pClient->setConnectionParams(24, 40, 0, 400);
             pClient->setConnectTimeout(5);
         }
@@ -376,11 +323,9 @@ private:
 
         data.rssi = pClient->getRssi();
         connectTime = millis();
-        pCharWrite1 = nullptr;
-        pCharWrite2 = nullptr;
+        allWriteChars.clear();
         allNotifyChars.clear();
 
-        // Reset buffers
         rxHead = 0;
         rxTail = 0;
         frameBuffer.clear();
@@ -389,7 +334,7 @@ private:
         data.tx_cmd_count = 0;
         data.last_rx_hex = "None";
 
-        // Discover services and find write & notify characteristics
+        // Find characteristics across both Service 0xFFE0 and Service 0xFF10
         NimBLERemoteService* pSvcE0 = pClient->getService(NimBLEUUID((uint16_t)0xFFE0));
         NimBLERemoteService* pSvc10 = pClient->getService(NimBLEUUID((uint16_t)0xFF10));
 
@@ -397,11 +342,11 @@ private:
             auto* c1 = pSvcE0->getCharacteristic(NimBLEUUID((uint16_t)0xFFE1));
             auto* c2 = pSvcE0->getCharacteristic(NimBLEUUID((uint16_t)0xFFE2));
             if (c1) {
-                if (c1->canWrite() || c1->canWriteNoResponse()) pCharWrite1 = c1;
+                if (c1->canWrite() || c1->canWriteNoResponse()) allWriteChars.push_back(c1);
                 if (c1->canNotify() || c1->canIndicate()) allNotifyChars.push_back(c1);
             }
             if (c2) {
-                if (!pCharWrite1 && (c2->canWrite() || c2->canWriteNoResponse())) pCharWrite1 = c2;
+                if (c2->canWrite() || c2->canWriteNoResponse()) allWriteChars.push_back(c2);
                 if (c2->canNotify() || c2->canIndicate()) allNotifyChars.push_back(c2);
             }
         }
@@ -409,50 +354,34 @@ private:
         if (pSvc10 != nullptr) {
             auto* c11 = pSvc10->getCharacteristic(NimBLEUUID((uint16_t)0xFF11));
             auto* c12 = pSvc10->getCharacteristic(NimBLEUUID((uint16_t)0xFF12));
-            if (c11 && (c11->canNotify() || c11->canIndicate())) allNotifyChars.push_back(c11);
-            if (c12 && (c12->canNotify() || c12->canIndicate())) allNotifyChars.push_back(c12);
-        }
-
-        // Fallback: If neither found by UUID, scan all services
-        if (pCharWrite1 == nullptr && allNotifyChars.empty()) {
-            std::vector<NimBLERemoteService*>* pServices = pClient->getServices(true);
-            if (pServices != nullptr) {
-                for (auto* s : *pServices) {
-                    String sUuid = s->getUUID().toString().c_str();
-                    if (sUuid.indexOf("1800") >= 0 || sUuid.indexOf("1801") >= 0) continue;
-                    std::vector<NimBLERemoteCharacteristic*>* pChars = s->getCharacteristics(true);
-                    if (pChars != nullptr) {
-                        for (auto* c : *pChars) {
-                            if ((c->canWrite() || c->canWriteNoResponse()) && pCharWrite1 == nullptr) {
-                                pCharWrite1 = c;
-                            }
-                            if (c->canNotify() || c->canIndicate()) {
-                                allNotifyChars.push_back(c);
-                            }
-                        }
-                    }
-                }
+            if (c11) {
+                if (c11->canWrite() || c11->canWriteNoResponse()) allWriteChars.push_back(c11);
+                if (c11->canNotify() || c11->canIndicate()) allNotifyChars.push_back(c11);
+            }
+            if (c12) {
+                if (c12->canWrite() || c12->canWriteNoResponse()) allWriteChars.push_back(c12);
+                if (c12->canNotify() || c12->canIndicate()) allNotifyChars.push_back(c12);
             }
         }
 
-        if (pCharWrite1 == nullptr || allNotifyChars.empty()) {
-            data.last_status = "Data Characteristic Not Found";
+        if (allWriteChars.empty() || allNotifyChars.empty()) {
+            data.last_status = "Data Characteristics Not Found";
             data.addLog("Error: Write or Notify Characteristic not found");
             pClient->disconnect();
             return;
         }
 
-        data.write_handle = pCharWrite1 ? pCharWrite1->getHandle() : 0;
+        data.write_handle = allWriteChars[0]->getHandle();
         data.notify_handle = allNotifyChars[0]->getHandle();
 
-        // Subscribe to notify characteristics with safe, non-blocking callback
-        for (auto* ch : allNotifyChars) {
-            uint16_t h = ch->getHandle();
-            bool subOk = ch->subscribe(true, [this](NimBLERemoteCharacteristic* pChar, uint8_t* pData, size_t length, bool isNotify) {
+        // Subscribe to all available notify channels (0xFFE1, 0xFFE2, 0xFF11, 0xFF12)
+        for (auto* nCh : allNotifyChars) {
+            uint16_t h = nCh->getHandle();
+            bool subOk = nCh->subscribe(true, [this](NimBLERemoteCharacteristic* pChar, uint8_t* pData, size_t length, bool isNotify) {
                 this->onNotifyRaw(pChar->getHandle(), pData, length);
             });
             if (!subOk) {
-                subOk = ch->subscribe(false, [this](NimBLERemoteCharacteristic* pChar, uint8_t* pData, size_t length, bool isNotify) {
+                subOk = nCh->subscribe(false, [this](NimBLERemoteCharacteristic* pChar, uint8_t* pData, size_t length, bool isNotify) {
                     this->onNotifyRaw(pChar->getHandle(), pData, length);
                 });
             }
@@ -463,10 +392,14 @@ private:
         data.last_status = "Connected (Waiting for data)";
         lastConnectAttempt = millis();
 
-        // Initial handshake: query device info (0x97) and status (0x96)
+        // syssi standard: Send 0x97 once, wait 200ms, send 0x96 once
+        // This triggers the JK-BMS to automatically start streaming Frame 0x02
+        vTaskDelay(pdMS_TO_TICKS(150));
         sendBmsCommand(0x97);
+        vTaskDelay(pdMS_TO_TICKS(200));
         sendBmsCommand(0x96);
-        lastQueryTime = millis();
+        lastHeartbeatTime = millis();
+        data.addLog("Stream initiated (0x97 + 0x96 sent)");
     }
 
     void drainRxRingBuffer() {
@@ -478,7 +411,6 @@ private:
             frameBuffer.push_back(b);
         }
 
-        // Format recent hex for UI diagnostics
         if (!frameBuffer.empty()) {
             char hexBuf[50] = {0};
             size_t n = std::min((size_t)12, frameBuffer.size());
@@ -488,25 +420,12 @@ private:
             data.last_rx_hex = String(hexBuf);
         }
 
-        // Check for 3-byte status packet: FC AA 06 (Auth request or status code)
-        if (frameBuffer.size() >= 3) {
-            for (size_t i = 0; i + 3 <= frameBuffer.size(); i++) {
-                if (frameBuffer[i] == 0xFC && frameBuffer[i+1] == 0xAA && frameBuffer[i+2] == 0x06) {
-                    data.addLog("RX: FC AA 06 -> Sending Auth PIN (" + data.pin + ")");
-                    sendAuthFrame(data.pin);
-                    sendBmsCommand(0x96);
-                    frameBuffer.erase(frameBuffer.begin() + i, frameBuffer.begin() + i + 3);
-                    break;
-                }
-            }
-        }
-
         // Prevent buffer bloat
-        if (frameBuffer.size() > 600) {
-            frameBuffer.erase(frameBuffer.begin(), frameBuffer.begin() + 200);
+        if (frameBuffer.size() > 700) {
+            frameBuffer.erase(frameBuffer.begin(), frameBuffer.begin() + 250);
         }
 
-        // Check for JK02 preamble: 0x55 0xAA 0xEB 0x90
+        // Check for JK02 / JK04 preamble: 0x55 0xAA 0xEB 0x90
         for (size_t i = 0; i + 4 <= frameBuffer.size(); i++) {
             if (frameBuffer[i] == 0x55 && frameBuffer[i+1] == 0xAA &&
                 frameBuffer[i+2] == 0xEB && frameBuffer[i+3] == 0x90) {
@@ -729,8 +648,7 @@ private:
             mgr->data.connected = false;
             mgr->data.data_valid = false;
             mgr->data.last_status = "Disconnected";
-            mgr->pCharWrite1 = nullptr;
-            mgr->pCharWrite2 = nullptr;
+            mgr->allWriteChars.clear();
             mgr->allNotifyChars.clear();
         }
     };
