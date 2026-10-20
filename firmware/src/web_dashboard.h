@@ -27,24 +27,104 @@ const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
     background: #0b1324;
     min-height: 100vh;
     display: flex;
-    justify-content: center;
-    align-items: flex-start;
+    flex-direction: column;
+    justify-content: flex-start;
+    align-items: center;
     padding: 16px 12px;
   }
+
+  /* Top Control & Card Alignment Bar */
+  .top-control-bar {
+    width: 100%;
+    max-width: 460px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 14px;
+    padding: 7px 12px;
+    background: rgba(15, 23, 42, 0.75);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 14px;
+    box-sizing: border-box;
+    transition: max-width 0.25s ease;
+  }
+  .top-brand {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: #f8fafc;
+    font-size: 0.82rem;
+    font-weight: 800;
+    letter-spacing: 0.3px;
+  }
+  .layout-switch-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .layout-switch-label {
+    font-size: 0.68rem;
+    font-weight: 700;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .layout-switch-buttons {
+    display: inline-flex;
+    background: rgba(30, 41, 59, 0.85);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 8px;
+    padding: 2px;
+    gap: 2px;
+  }
+  .btn-layout-opt {
+    background: transparent;
+    color: #94a3b8;
+    border: none;
+    padding: 4px 8px;
+    border-radius: 6px;
+    font-size: 0.70rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .btn-layout-opt:hover {
+    color: #ffffff;
+    background: rgba(255, 255, 255, 0.1);
+  }
+  .btn-layout-opt.active {
+    background: #2563eb;
+    color: #ffffff;
+    box-shadow: 0 1px 4px rgba(37,99,235,0.4);
+  }
+
   .page-wrapper {
     width: 100%;
-    max-width: 440px;
+    max-width: 460px;
     display: flex;
     flex-direction: column;
     gap: 16px;
     margin: 0 auto;
     transition: max-width 0.25s ease;
   }
+  .dashboard-col {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    width: 100%;
+    min-width: 0;
+  }
 
   /* Tablet & Medium Screen (860px - 1239px): 2 Columns */
   @media (min-width: 860px) {
     body {
       padding: 24px 20px;
+    }
+    .top-control-bar {
+      max-width: 1100px;
     }
     .page-wrapper {
       max-width: 1100px;
@@ -56,10 +136,7 @@ const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
     .app-frame {
       grid-column: 1;
     }
-    .bms-card {
-      grid-column: 2;
-    }
-    .macro-card {
+    .dashboard-col {
       grid-column: 2;
     }
     .weather-card {
@@ -69,26 +146,74 @@ const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
 
   /* Large Desktop & Widescreen (>= 1240px): 3 Columns */
   @media (min-width: 1240px) {
+    .top-control-bar {
+      max-width: 1600px;
+    }
     .page-wrapper {
-      max-width: 1580px;
+      max-width: 1600px;
       display: grid;
-      grid-template-columns: 420px minmax(420px, 460px) minmax(460px, 1fr);
+      grid-template-columns: 420px minmax(400px, 460px) minmax(440px, 1fr);
       align-items: start;
       gap: 22px;
     }
     .app-frame {
       grid-column: 1;
     }
-    .bms-card {
-      grid-column: 2;
-    }
-    .macro-card {
+    .dashboard-col {
       grid-column: 2;
     }
     .weather-card {
       grid-column: 3;
     }
   }
+
+  /* User-Selected Layout Overrides */
+  .layout-1col .top-control-bar,
+  .page-wrapper.layout-1col {
+    max-width: 480px !important;
+  }
+  .page-wrapper.layout-1col {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 16px !important;
+    margin: 0 auto !important;
+  }
+  .page-wrapper.layout-1col .app-frame,
+  .page-wrapper.layout-1col .dashboard-col,
+  .page-wrapper.layout-1col .weather-card {
+    grid-column: auto !important;
+    width: 100% !important;
+  }
+
+  .layout-2col .top-control-bar,
+  .page-wrapper.layout-2col {
+    max-width: 1100px !important;
+  }
+  .page-wrapper.layout-2col {
+    display: grid !important;
+    grid-template-columns: 420px 1fr !important;
+    align-items: start !important;
+    gap: 20px !important;
+    margin: 0 auto !important;
+  }
+  .page-wrapper.layout-2col .app-frame { grid-column: 1 !important; }
+  .page-wrapper.layout-2col .dashboard-col { grid-column: 2 !important; }
+  .page-wrapper.layout-2col .weather-card { grid-column: 1 / -1 !important; }
+
+  .layout-3col .top-control-bar,
+  .page-wrapper.layout-3col {
+    max-width: 1600px !important;
+  }
+  .page-wrapper.layout-3col {
+    display: grid !important;
+    grid-template-columns: 420px minmax(400px, 460px) minmax(440px, 1fr) !important;
+    align-items: start !important;
+    gap: 22px !important;
+    margin: 0 auto !important;
+  }
+  .page-wrapper.layout-3col .app-frame { grid-column: 1 !important; }
+  .page-wrapper.layout-3col .dashboard-col { grid-column: 2 !important; }
+  .page-wrapper.layout-3col .weather-card { grid-column: 3 !important; }
   .app-frame {
     width: 100%;
     background: linear-gradient(180deg, var(--bg-top) 0%, var(--bg-mid) 45%, var(--bg-bot) 100%);
@@ -659,8 +784,28 @@ const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
   }
   .bms-metrics-row {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 6px;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 5px;
+  }
+  .bms-volt-box {
+    background: #f0fdf4 !important;
+    border: 1.5px solid #86efac !important;
+  }
+  .bms-volt-box .bms-metric-val {
+    color: #15803d !important;
+    font-weight: 800;
+  }
+  .bms-volt-badge {
+    background: #dcfce7;
+    color: #166534;
+    border: 1px solid #86efac;
+    padding: 2px 7px;
+    border-radius: 6px;
+    font-size: 0.74rem;
+    font-weight: 800;
+    margin-left: 6px;
+    letter-spacing: -0.2px;
+    display: inline-block;
   }
   .bms-metric-box {
     background: #f8fafc;
@@ -738,8 +883,11 @@ const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
       font-size: 0.68rem !important;
     }
     .bms-metrics-row {
-      grid-template-columns: repeat(2, 1fr);
-      gap: 6px;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 5px;
+    }
+    .bms-volt-box {
+      grid-column: 1 / -1;
     }
   }
   .bms-cell-box {
@@ -1240,7 +1388,24 @@ const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
 </head>
 <body>
 
-<div class="page-wrapper">
+<!-- Top Control & Card Alignment Toolbar -->
+<div class="top-control-bar">
+  <div class="top-brand">
+    <span class="top-brand-icon">⚡</span>
+    <span class="top-brand-text">Next 6.2kW Smart Solar</span>
+  </div>
+  <div class="layout-switch-bar">
+    <span class="layout-switch-label">Align Cards:</span>
+    <div class="layout-switch-buttons">
+      <button class="btn-layout-opt active" id="btnLayoutAuto" onclick="setDashboardLayout('auto')" title="Auto responsive layout">🔄 Auto</button>
+      <button class="btn-layout-opt" id="btnLayout1Col" onclick="setDashboardLayout('1col')" title="Single column stacked (clean & aligned)">📱 1-Col</button>
+      <button class="btn-layout-opt" id="btnLayout2Col" onclick="setDashboardLayout('2col')" title="2-column side-by-side grid">🔲 2-Col</button>
+      <button class="btn-layout-opt" id="btnLayout3Col" onclick="setDashboardLayout('3col')" title="3-column widescreen dashboard">🖥️ 3-Col</button>
+    </div>
+  </div>
+</div>
+
+<div class="page-wrapper" id="pageWrapper">
 
 <!-- Card 1: Main Inverter Telemetry & Power Flow Diagram -->
 <div class="app-frame">
@@ -1423,11 +1588,17 @@ const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
 
 </div> <!-- /Card 1: app-frame -->
 
+<!-- Column 2 / Center Stack: JK-BMS Live Monitor + Inverter Mode Macros -->
+<div class="dashboard-col">
+
 <!-- Card 2: 14S Nissan Leaf — JK-BMS Live Monitor -->
 <div class="bms-card">
   <div class="bms-card-header">
     <div>
-      <div class="bms-title">🔋 14S Nissan Leaf — JK-BMS Monitor</div>
+      <div class="bms-title">
+        🔋 14S Nissan Leaf — JK-BMS Monitor
+        <span id="bmsHeaderVolt" class="bms-volt-badge" style="display:none;">-- V</span>
+      </div>
       <div id="bmsStatusSub" class="bms-subtitle">Connecting via Bluetooth BLE...</div>
     </div>
     <div class="bms-header-actions">
@@ -1437,8 +1608,15 @@ const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
     </div>
   </div>
 
-  <!-- Key Metrics Row: Delta V + 3 Temperatures -->
+  <!-- Key Metrics Row: Battery Total Voltage + Delta V + 3 Temperatures -->
   <div class="bms-metrics-row">
+    <!-- Battery Total Pack Voltage Pill -->
+    <div class="bms-metric-box bms-volt-box" id="bmsVoltBox">
+      <div class="bms-metric-label">BATTERY VOLTS</div>
+      <div class="bms-metric-val" id="bmsPackVolt">-- <span style="font-size:0.75rem;">V</span></div>
+      <div class="bms-metric-sub" id="bmsAvgCellSub">14S Pack</div>
+    </div>
+
     <!-- Delta V Metric Pill -->
     <div class="bms-metric-box bms-delta-box" id="bmsDeltaBox">
       <div class="bms-metric-label">VOLTAGE DIFF</div>
@@ -1502,6 +1680,8 @@ const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
     </div>
   </div>
 </div>
+
+</div> <!-- /dashboard-col -->
 
 <!-- Card 3: 24h Solar & Weather Forecast Card (Broadcast TV Graphic Theme) -->
 <div class="weather-card">
@@ -2004,6 +2184,24 @@ function renderBmsData(bms) {
     statusSub.innerHTML = `<span style="color:#d97706; font-weight:700;">🟡 ${escapeHtml(bms.status || 'Connecting...')}</span>`;
   } else {
     statusSub.innerHTML = `<span style="color:#64748b;">⚪ Bluetooth Turned OFF (Click "🔵 Turn On" to connect)</span>`;
+  }
+
+  // Battery Total Pack Voltage Pill & Header Badge
+  const voltVal = document.getElementById('bmsPackVolt');
+  const avgSub = document.getElementById('bmsAvgCellSub');
+  const headerVolt = document.getElementById('bmsHeaderVolt');
+  if (bms.valid && bms.pack_voltage !== undefined && bms.pack_voltage > 0) {
+    const vStr = bms.pack_voltage.toFixed(2);
+    if (voltVal) voltVal.innerHTML = `${vStr} <span style="font-size:0.75rem;">V</span>`;
+    if (avgSub) avgSub.textContent = bms.avg_cell_v ? `Avg: ${bms.avg_cell_v.toFixed(3)}V` : '14S Pack';
+    if (headerVolt) {
+      headerVolt.textContent = `${vStr} V`;
+      headerVolt.style.display = 'inline-block';
+    }
+  } else {
+    if (voltVal) voltVal.innerHTML = `-- <span style="font-size:0.75rem;">V</span>`;
+    if (avgSub) avgSub.textContent = '14S Pack';
+    if (headerVolt) headerVolt.style.display = 'none';
   }
 
   // Delta V Pill
@@ -3184,6 +3382,46 @@ window.addEventListener('keydown', (e) => {
   }
 });
 
+// -------------------------------------------------------------
+// Dashboard Card Alignment / Layout Switcher Controller
+// -------------------------------------------------------------
+function setDashboardLayout(mode) {
+  const pw = document.getElementById('pageWrapper');
+  if (!pw) return;
+
+  document.body.classList.remove('layout-1col', 'layout-2col', 'layout-3col');
+  pw.classList.remove('layout-1col', 'layout-2col', 'layout-3col');
+
+  if (mode === '1col') {
+    document.body.classList.add('layout-1col');
+    pw.classList.add('layout-1col');
+  } else if (mode === '2col') {
+    document.body.classList.add('layout-2col');
+    pw.classList.add('layout-2col');
+  } else if (mode === '3col') {
+    document.body.classList.add('layout-3col');
+    pw.classList.add('layout-3col');
+  }
+
+  document.querySelectorAll('.btn-layout-opt').forEach(b => b.classList.remove('active'));
+  const btn = document.getElementById('btnLayout' + mode.charAt(0).toUpperCase() + mode.slice(1));
+  if (btn) btn.classList.add('active');
+
+  try {
+    localStorage.setItem('dash_card_layout', mode);
+  } catch(e) {}
+}
+
+function initDashboardLayout() {
+  try {
+    const savedLayout = localStorage.getItem('dash_card_layout') || 'auto';
+    setDashboardLayout(savedLayout);
+  } catch(e) {
+    setDashboardLayout('auto');
+  }
+}
+
+initDashboardLayout();
 setInterval(refreshData, 2000);
 setInterval(() => fetchWeatherForecast(false), 30 * 60 * 1000); // 30 min weather refresh
 refreshData();
