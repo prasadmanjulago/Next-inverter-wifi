@@ -41,13 +41,13 @@ const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
     transition: max-width 0.25s ease;
   }
 
-  /* Tablet & Medium Screen (860px - 1239px): 2 Columns (Card 1 & 2 side-by-side, Card 3 wide below) */
+  /* Tablet & Medium Screen (860px - 1239px): 2 Columns */
   @media (min-width: 860px) {
     body {
       padding: 24px 20px;
     }
     .page-wrapper {
-      max-width: 1080px;
+      max-width: 1100px;
       display: grid;
       grid-template-columns: 420px 1fr;
       align-items: start;
@@ -55,6 +55,9 @@ const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
     }
     .app-frame {
       grid-column: 1;
+    }
+    .bms-card {
+      grid-column: 2;
     }
     .macro-card {
       grid-column: 2;
@@ -64,17 +67,20 @@ const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
     }
   }
 
-  /* Large Desktop & Widescreen (>= 1240px): All 3 Cards side-by-side! */
+  /* Large Desktop & Widescreen (>= 1240px): 3 Columns */
   @media (min-width: 1240px) {
     .page-wrapper {
-      max-width: 1540px;
+      max-width: 1580px;
       display: grid;
-      grid-template-columns: 420px 380px minmax(460px, 1fr);
+      grid-template-columns: 420px minmax(420px, 460px) minmax(460px, 1fr);
       align-items: start;
       gap: 22px;
     }
     .app-frame {
       grid-column: 1;
+    }
+    .bms-card {
+      grid-column: 2;
     }
     .macro-card {
       grid-column: 2;
@@ -553,13 +559,13 @@ const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
     background: #ffffff;
     border-radius: 20px;
     box-shadow: 0 10px 25px -5px rgba(0,0,0,0.06), 0 8px 10px -6px rgba(0,0,0,0.03);
-    padding: 16px;
+    padding: 16px 12px;
     width: 100%;
-    max-width: 460px;
     box-sizing: border-box;
     display: flex;
     flex-direction: column;
     gap: 12px;
+    overflow: hidden;
   }
   .bms-card-header {
     display: flex;
@@ -716,30 +722,45 @@ const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
   }
   .bms-cells-grid {
     display: grid;
-    grid-template-columns: repeat(7, 1fr);
-    gap: 6px;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 4px;
+    width: 100%;
+    box-sizing: border-box;
   }
   @media (max-width: 480px) {
     .bms-cells-grid {
-      grid-template-columns: repeat(4, 1fr);
+      gap: 3px;
+    }
+    .bms-cell-box {
+      padding: 4px 1px !important;
+    }
+    .bms-cell-volt {
+      font-size: 0.68rem !important;
     }
     .bms-metrics-row {
       grid-template-columns: repeat(2, 1fr);
+      gap: 6px;
     }
   }
   .bms-cell-box {
     background: #f8fafc;
-    border: 1.5px solid #e2e8f0;
-    border-radius: 8px;
-    padding: 6px 4px;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    padding: 5px 2px;
     text-align: center;
     position: relative;
     transition: all 0.2s;
+    min-width: 0;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
   }
   .bms-cell-box.highest {
     background: #eff6ff !important;
     border-color: #2563eb !important;
-    box-shadow: 0 0 0 2px rgba(37,99,235,0.25);
+    box-shadow: 0 0 0 1.5px rgba(37,99,235,0.25);
   }
   .bms-cell-box.highest .bms-cell-volt {
     color: #1d4ed8 !important;
@@ -748,7 +769,7 @@ const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
   .bms-cell-box.lowest {
     background: #fef2f2 !important;
     border-color: #dc2626 !important;
-    box-shadow: 0 0 0 2px rgba(220,38,38,0.25);
+    box-shadow: 0 0 0 1.5px rgba(220,38,38,0.25);
   }
   .bms-cell-box.lowest .bms-cell-volt {
     color: #b91c1c !important;
@@ -757,13 +778,14 @@ const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
   .bms-cell-badge {
     position: absolute;
     top: -5px;
-    right: 2px;
-    font-size: 0.5rem;
+    right: 1px;
+    font-size: 0.44rem;
     font-weight: 800;
-    padding: 1px 3px;
+    padding: 1px 2px;
     border-radius: 3px;
     text-transform: uppercase;
     line-height: 1;
+    pointer-events: none;
   }
   .bms-cell-badge.max {
     background: #2563eb;
@@ -774,23 +796,26 @@ const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
     color: #ffffff;
   }
   .bms-cell-label {
-    font-size: 0.62rem;
+    font-size: 0.58rem;
     font-weight: 700;
     color: #64748b;
-    margin-bottom: 2px;
+    margin-bottom: 1px;
+    line-height: 1;
   }
   .bms-cell-volt {
-    font-size: 0.84rem;
+    font-size: 0.72rem;
     font-weight: 700;
     color: #0f172a;
-    letter-spacing: -0.3px;
+    letter-spacing: -0.4px;
+    white-space: nowrap;
+    line-height: 1.1;
   }
   .bms-cell-bar-bg {
-    width: 100%;
+    width: 82%;
     height: 3px;
     background: #e2e8f0;
     border-radius: 2px;
-    margin-top: 4px;
+    margin-top: 3px;
     overflow: hidden;
   }
   .bms-cell-bar-fill {
@@ -851,7 +876,8 @@ const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
     color: #475569;
     text-transform: uppercase;
     letter-spacing: 0.5px;
-  /* Card 3: 24h Solar & Weather Forecast Card (Broadcast TV Graphic Theme) */
+  }
+  /* Card 4: 24h Solar & Weather Forecast Card (Broadcast TV Graphic Theme) */
   .weather-card {
     background: #ffffff;
     border-radius: 26px;
@@ -2008,7 +2034,7 @@ function renderBmsData(bms) {
       emptyHtml += `
         <div class="bms-cell-box">
           <div class="bms-cell-label">C${i < 10 ? '0' + i : i}</div>
-          <div class="bms-cell-volt">-- V</div>
+          <div class="bms-cell-volt">--<span style="font-size:0.56rem; font-weight:600; opacity:0.8;">V</span></div>
           <div class="bms-cell-bar-bg"><div class="bms-cell-bar-fill" style="width:0%;"></div></div>
         </div>`;
     }
@@ -2034,17 +2060,17 @@ function renderBmsData(bms) {
     let badgeHtml = '';
     if (isHighest) {
       boxClass += ' highest';
-      badgeHtml = `<span class="bms-cell-badge max">MAX 🔵</span>`;
+      badgeHtml = `<span class="bms-cell-badge max">MAX</span>`;
     } else if (isLowest) {
       boxClass += ' lowest';
-      badgeHtml = `<span class="bms-cell-badge min">MIN 🔴</span>`;
+      badgeHtml = `<span class="bms-cell-badge min">MIN</span>`;
     }
 
     html += `
       <div class="${boxClass}">
         ${badgeHtml}
         <div class="bms-cell-label">C${cellNum < 10 ? '0' + cellNum : cellNum}</div>
-        <div class="bms-cell-volt">${v.toFixed(3)}<span style="font-size:0.65rem; font-weight:600;">V</span></div>
+        <div class="bms-cell-volt">${v.toFixed(3)}<span style="font-size:0.56rem; font-weight:600; opacity:0.8;">V</span></div>
         <div class="bms-cell-bar-bg">
           <div class="bms-cell-bar-fill" style="width:${pct}%;"></div>
         </div>
