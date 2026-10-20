@@ -13,7 +13,7 @@
 #include "inverter_diagnostics_page.h"
 #include "jk_bms_ble.h"
 
-#define FIRMWARE_VERSION "1.2.0"
+#define FIRMWARE_VERSION "1.2.1"
 
 // Hardware Serial 2 Pins for Inverter RS-232
 #define INVERTER_RX_PIN 16
