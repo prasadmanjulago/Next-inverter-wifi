@@ -10,8 +10,8 @@
 // Open-Source Auto-Streaming Architecture (syssi/esphome-jk-bms standard)
 // - NO Auth / PIN spam (Pin is only for settings, NOT for reading telemetry)
 // - Sends 0x97 and 0x96 ONCE on connect -> BMS auto-streams Frame 0x02
-// - Subscribes to notify channels across 0xFFE0 & 0xFF10
-// - ZERO constant beeping, ZERO radio saturation
+// - Alternates JK02 and Modbus (0x4E 0x57) queries every 4s while waiting for data
+// - Subscribes across 0xFFE0 & 0xFF10 with lock-free ring buffer
 // - Dedicated FreeRTOS Task pinned to Core 0 (WebServer on Core 1 remains 100% fluid)
 // -----------------------------------------------------------------------------
 
@@ -123,7 +123,6 @@ public:
 
     void taskLoop() {
         while (true) {
-            // While receiving OTA updates, pause BLE completely
             if (isOtaUpdating) {
                 vTaskDelay(pdMS_TO_TICKS(500));
                 continue;
@@ -133,7 +132,6 @@ public:
                 stepBle();
             }
 
-            // Relaxed 100ms task rate: keeps Core 0 cool and leaves plenty of 2.4GHz RF for Wi-Fi
             vTaskDelay(pdMS_TO_TICKS(100));
         }
     }
@@ -160,8 +158,8 @@ public:
             data.connected = false;
             data.data_valid = false;
             data.last_status = "Disabled";
-            allWriteChars.clear();
-            allNotifyChars.clear();
+            pWriteChar = nullptr;
+            pNotifyChar = nullptr;
         }
     }
 
@@ -226,7 +224,7 @@ public:
     }
 
     bool sendBmsCommand(uint8_t cmdType) {
-        if (allWriteChars.empty()) return false;
+        if (pWriteChar == nullptr) return false;
         uint8_t frame[20] = {0};
         frame[0] = 0xAA;
         frame[1] = 0x55;
@@ -239,26 +237,36 @@ public:
         frame[19] = sum;
 
         data.tx_cmd_count++;
-        bool ok = false;
-        for (auto* wCh : allWriteChars) {
-            if (wCh->writeValue(frame, sizeof(frame), false)) {
-                ok = true;
-            }
-        }
+        bool ok = pWriteChar->writeValue(frame, sizeof(frame), false);
+
         char buf[36];
         snprintf(buf, sizeof(buf), "TX 0x%02X: %s", cmdType, ok ? "OK" : "FAIL");
         data.addLog(String(buf));
         return ok;
     }
 
+    bool sendModbusQuery() {
+        if (pWriteChar == nullptr) return false;
+        uint8_t mbFrame[21] = {
+            0x4E, 0x57, 0x00, 0x13, 0x00, 0x00, 0x00, 0x00,
+            0x06, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x68, 0x00, 0x00, 0x01, 0x29
+        };
+        data.tx_cmd_count++;
+        bool ok = pWriteChar->writeValue(mbFrame, sizeof(mbFrame), false);
+        data.addLog("TX Modbus (0x06): " + String(ok ? "OK" : "FAIL"));
+        return ok;
+    }
+
 private:
     TaskHandle_t taskHandle = nullptr;
     NimBLEClient* pClient = nullptr;
-    std::vector<NimBLERemoteCharacteristic*> allWriteChars;
-    std::vector<NimBLERemoteCharacteristic*> allNotifyChars;
+    NimBLERemoteCharacteristic* pWriteChar = nullptr;
+    NimBLERemoteCharacteristic* pNotifyChar = nullptr;
     unsigned long lastConnectAttempt = 0;
     unsigned long lastHeartbeatTime = 0;
     unsigned long connectTime = 0;
+    uint32_t queryCount = 0;
 
     static const size_t RX_RING_SIZE = 1024;
     uint8_t rxRing[RX_RING_SIZE];
@@ -285,16 +293,29 @@ private:
         drainRxRingBuffer();
 
         // 3. Stalled / Unresponsive Connection Watchdog
-        if (data.connected && !data.data_valid && (now - connectTime > 30000)) {
-            data.addLog("Watchdog: No data stream in 30s. Reconnecting...");
+        if (data.connected && !data.data_valid && (now - connectTime > 35000)) {
+            data.addLog("Watchdog: No data stream in 35s. Reconnecting...");
             if (pClient) pClient->disconnect();
             data.connected = false;
             data.last_status = "Connection Timeout (No Packets)";
-            allWriteChars.clear();
-            allNotifyChars.clear();
+            pWriteChar = nullptr;
+            pNotifyChar = nullptr;
             return;
         }
 
+        // 4. While waiting for data, send query every 3 seconds
+        // Once data_valid is true, stop sending queries to avoid BMS beeping!
+        if (data.connected && !data.data_valid && (now - lastHeartbeatTime >= 3000)) {
+            lastHeartbeatTime = now;
+            queryCount++;
+            if (queryCount % 4 == 0) {
+                sendModbusQuery();
+            } else {
+                sendBmsCommand(0x96);
+            }
+        }
+
+        // 5. Keep-alive heartbeat: if live stream stalls for > 25 seconds
         if (data.connected && data.data_valid && (now - data.last_update > 25000)) {
             data.addLog("Watchdog: Stream stalled (>25s). Re-sending 0x96...");
             sendBmsCommand(0x96);
@@ -309,7 +330,6 @@ private:
         if (pClient == nullptr) {
             pClient = NimBLEDevice::createClient();
             pClient->setClientCallbacks(new ClientCallbacks(this), false);
-            // Coexistence-friendly: 30ms-50ms interval, 4.0s supervision timeout
             pClient->setConnectionParams(24, 40, 0, 400);
             pClient->setConnectTimeout(5);
         }
@@ -323,8 +343,8 @@ private:
 
         data.rssi = pClient->getRssi();
         connectTime = millis();
-        allWriteChars.clear();
-        allNotifyChars.clear();
+        pWriteChar = nullptr;
+        pNotifyChar = nullptr;
 
         rxHead = 0;
         rxTail = 0;
@@ -333,72 +353,75 @@ private:
         data.rx_byte_count = 0;
         data.tx_cmd_count = 0;
         data.last_rx_hex = "None";
+        queryCount = 0;
 
-        // Find characteristics across both Service 0xFFE0 and Service 0xFF10
+        // Connect exclusively to Service 0xFFE0 and Characteristic 0xFFE1 (Standard JK-BMS BLE protocol)
+        // Never touch 0xFF10 or other vendor test services to avoid beeping and protocol errors.
         NimBLERemoteService* pSvcE0 = pClient->getService(NimBLEUUID((uint16_t)0xFFE0));
-        NimBLERemoteService* pSvc10 = pClient->getService(NimBLEUUID((uint16_t)0xFF10));
-
-        if (pSvcE0 != nullptr) {
-            auto* c1 = pSvcE0->getCharacteristic(NimBLEUUID((uint16_t)0xFFE1));
-            auto* c2 = pSvcE0->getCharacteristic(NimBLEUUID((uint16_t)0xFFE2));
-            if (c1) {
-                if (c1->canWrite() || c1->canWriteNoResponse()) allWriteChars.push_back(c1);
-                if (c1->canNotify() || c1->canIndicate()) allNotifyChars.push_back(c1);
-            }
-            if (c2) {
-                if (c2->canWrite() || c2->canWriteNoResponse()) allWriteChars.push_back(c2);
-                if (c2->canNotify() || c2->canIndicate()) allNotifyChars.push_back(c2);
-            }
+        if (pSvcE0 == nullptr) {
+            pSvcE0 = pClient->getService(NimBLEUUID("0000ffe0-0000-1000-8000-00805f9b34fb"));
         }
 
-        if (pSvc10 != nullptr) {
-            auto* c11 = pSvc10->getCharacteristic(NimBLEUUID((uint16_t)0xFF11));
-            auto* c12 = pSvc10->getCharacteristic(NimBLEUUID((uint16_t)0xFF12));
-            if (c11) {
-                if (c11->canWrite() || c11->canWriteNoResponse()) allWriteChars.push_back(c11);
-                if (c11->canNotify() || c11->canIndicate()) allNotifyChars.push_back(c11);
-            }
-            if (c12) {
-                if (c12->canWrite() || c12->canWriteNoResponse()) allWriteChars.push_back(c12);
-                if (c12->canNotify() || c12->canIndicate()) allNotifyChars.push_back(c12);
-            }
-        }
-
-        if (allWriteChars.empty() || allNotifyChars.empty()) {
-            data.last_status = "Data Characteristics Not Found";
-            data.addLog("Error: Write or Notify Characteristic not found");
+        if (pSvcE0 == nullptr) {
+            data.last_status = "Service 0xFFE0 Not Found";
+            data.addLog("Error: Service 0xFFE0 not found");
             pClient->disconnect();
             return;
         }
 
-        data.write_handle = allWriteChars[0]->getHandle();
-        data.notify_handle = allNotifyChars[0]->getHandle();
+        NimBLERemoteCharacteristic* pCharE1 = pSvcE0->getCharacteristic(NimBLEUUID((uint16_t)0xFFE1));
+        if (pCharE1 == nullptr) {
+            pCharE1 = pSvcE0->getCharacteristic(NimBLEUUID("0000ffe1-0000-1000-8000-00805f9b34fb"));
+        }
 
-        // Subscribe to all available notify channels (0xFFE1, 0xFFE2, 0xFF11, 0xFF12)
-        for (auto* nCh : allNotifyChars) {
-            uint16_t h = nCh->getHandle();
-            bool subOk = nCh->subscribe(true, [this](NimBLERemoteCharacteristic* pChar, uint8_t* pData, size_t length, bool isNotify) {
+        if (pCharE1 == nullptr) {
+            data.last_status = "Char 0xFFE1 Not Found";
+            data.addLog("Error: Characteristic 0xFFE1 not found");
+            pClient->disconnect();
+            return;
+        }
+
+        pWriteChar = pCharE1;
+        pNotifyChar = pCharE1;
+        data.write_handle = pCharE1->getHandle();
+        data.notify_handle = pCharE1->getHandle();
+
+        // Subscribe to notifications on 0xFFE1 with write-response = true (required by BLE spec for CCCD 0x2902)
+        bool subOk = pCharE1->subscribe(true, [this](NimBLERemoteCharacteristic* pChar, uint8_t* pData, size_t length, bool isNotify) {
+            this->onNotifyRaw(pChar->getHandle(), pData, length);
+        }, true);
+
+        // Fallback to no-response if peripheral rejected write-with-response
+        if (!subOk) {
+            subOk = pCharE1->subscribe(true, [this](NimBLERemoteCharacteristic* pChar, uint8_t* pData, size_t length, bool isNotify) {
                 this->onNotifyRaw(pChar->getHandle(), pData, length);
-            });
-            if (!subOk) {
-                subOk = nCh->subscribe(false, [this](NimBLERemoteCharacteristic* pChar, uint8_t* pData, size_t length, bool isNotify) {
-                    this->onNotifyRaw(pChar->getHandle(), pData, length);
-                });
-            }
-            data.addLog("Sub 0x" + String(h, HEX) + ": " + (subOk ? "OK" : "FAIL"));
+            }, false);
+        }
+
+        // If notify fails, try indications
+        if (!subOk && pCharE1->canIndicate()) {
+            subOk = pCharE1->subscribe(false, [this](NimBLERemoteCharacteristic* pChar, uint8_t* pData, size_t length, bool isNotify) {
+                this->onNotifyRaw(pChar->getHandle(), pData, length);
+            }, true);
+        }
+
+        data.addLog("Sub 0xFFE1 (0x" + String(data.notify_handle, HEX) + "): " + (subOk ? "OK" : "FAIL"));
+        if (!subOk) {
+            data.last_status = "Notify Sub Failed";
+            pClient->disconnect();
+            return;
         }
 
         data.connected = true;
         data.last_status = "Connected (Waiting for data)";
         lastConnectAttempt = millis();
+        lastHeartbeatTime = millis();
 
-        // syssi standard: Send 0x97 once, wait 200ms, send 0x96 once
-        // This triggers the JK-BMS to automatically start streaming Frame 0x02
+        // Initial trigger: Send 0x97 once, wait 200ms, send 0x96 once
         vTaskDelay(pdMS_TO_TICKS(150));
         sendBmsCommand(0x97);
         vTaskDelay(pdMS_TO_TICKS(200));
         sendBmsCommand(0x96);
-        lastHeartbeatTime = millis();
         data.addLog("Stream initiated (0x97 + 0x96 sent)");
     }
 
@@ -421,8 +444,8 @@ private:
         }
 
         // Prevent buffer bloat
-        if (frameBuffer.size() > 700) {
-            frameBuffer.erase(frameBuffer.begin(), frameBuffer.begin() + 250);
+        if (frameBuffer.size() > 800) {
+            frameBuffer.erase(frameBuffer.begin(), frameBuffer.begin() + 300);
         }
 
         // Check for JK02 / JK04 preamble: 0x55 0xAA 0xEB 0x90
@@ -434,10 +457,15 @@ private:
                     frameBuffer.erase(frameBuffer.begin(), frameBuffer.begin() + i);
                 }
 
-                // JK02 full telemetry is ~300 bytes
-                if (frameBuffer.size() >= 300) {
-                    decodeFrame(frameBuffer.data(), frameBuffer.size());
-                    frameBuffer.erase(frameBuffer.begin(), frameBuffer.begin() + 300);
+                // In JK04 (Record Type 0x01) or shorter packs, frame can be 140-300 bytes
+                // In JK02 (Record Type 0x02), frame is 300 bytes
+                if (frameBuffer.size() >= 5) {
+                    uint8_t fType = frameBuffer[4];
+                    size_t requiredLen = (fType == 0x01) ? 140 : 300;
+                    if (frameBuffer.size() >= requiredLen) {
+                        decodeFrame(frameBuffer.data(), frameBuffer.size());
+                        frameBuffer.erase(frameBuffer.begin(), frameBuffer.begin() + requiredLen);
+                    }
                 }
                 return;
             }
@@ -461,8 +489,8 @@ private:
     void decodeFrame(const uint8_t* buf, size_t len) {
         if (len < 10) return;
 
-        // Format 1: JK02 Cell Info Frame (Record Type 0x02 or 0x03)
-        if (buf[0] == 0x55 && buf[1] == 0xAA && buf[2] == 0xEB && buf[3] == 0x90 && (buf[4] == 0x02 || buf[4] == 0x03)) {
+        // Format 1: JK02 Cell Info Frame (Record Type 0x02)
+        if (buf[0] == 0x55 && buf[1] == 0xAA && buf[2] == 0xEB && buf[3] == 0x90 && buf[4] == 0x02) {
             float minV = 99.0f;
             float maxV = -99.0f;
             int minIdx = 1;
@@ -535,6 +563,12 @@ private:
             data.data_valid = true;
             data.last_update = millis();
             data.last_status = "Connected (Live)";
+            return;
+        }
+
+        // Format 1b: Frame 0x03 (Device Info)
+        if (buf[0] == 0x55 && buf[1] == 0xAA && buf[2] == 0xEB && buf[3] == 0x90 && buf[4] == 0x03) {
+            data.addLog("Received Frame 0x03 (Device Info)");
             return;
         }
 
@@ -648,8 +682,8 @@ private:
             mgr->data.connected = false;
             mgr->data.data_valid = false;
             mgr->data.last_status = "Disconnected";
-            mgr->allWriteChars.clear();
-            mgr->allNotifyChars.clear();
+            mgr->pWriteChar = nullptr;
+            mgr->pNotifyChar = nullptr;
         }
     };
 };
