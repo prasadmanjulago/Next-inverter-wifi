@@ -13,7 +13,7 @@
 #include "inverter_diagnostics_page.h"
 #include "jk_bms_ble.h"
 
-#define FIRMWARE_VERSION "1.3.1"
+#define FIRMWARE_VERSION "1.3.2"
 
 // Hardware Serial 2 Pins for Inverter RS-232
 #define INVERTER_RX_PIN 16
@@ -695,6 +695,13 @@ void probeBlynkPins() {
     }
 }
 
+static inline String fmtBlynkVal(float val, int dec) {
+    if (dec == 0) return String((long)round(val));
+    String s = String(val, dec);
+    s.trim();
+    return s;
+}
+
 void sendBlynkTelemetry() {
     if (!blynkEnabled || blynkToken.length() == 0 || WiFi.status() != WL_CONNECTED) return;
     if (!telemetry.valid) return;
@@ -730,14 +737,14 @@ void sendBlynkTelemetry() {
 
     String url = serverUrl + "/external/api/batch/update?token=" + blynkToken;
     int added = 0;
-    if (blynkPinMask & (1 << 0)) { url += "&v0=" + String(pvWatts, 0); added++; }
+    if (blynkPinMask & (1 << 0)) { url += "&v0=" + fmtBlynkVal(pvWatts, 0); added++; }
     if (blynkPinMask & (1 << 1)) { url += "&v1=" + String(loadWatts); added++; }
-    if (blynkPinMask & (1 << 2)) { url += "&v2=" + String(gridWatts, 0); added++; }
-    if (blynkPinMask & (1 << 3)) { url += "&v3=" + String(batPwrWatts, 0); added++; }
+    if (blynkPinMask & (1 << 2)) { url += "&v2=" + fmtBlynkVal(gridWatts, 0); added++; }
+    if (blynkPinMask & (1 << 3)) { url += "&v3=" + fmtBlynkVal(batPwrWatts, 0); added++; }
     if (blynkPinMask & (1 << 4)) { url += "&v4=" + String(batSoc); added++; }
-    if (blynkPinMask & (1 << 5)) { url += "&v5=" + String(batV, 1); added++; }
-    if (blynkPinMask & (1 << 6)) { url += "&v6=" + String(gridV, 1); added++; }
-    if (blynkPinMask & (1 << 7)) { url += "&v7=" + String(temp, 1); added++; }
+    if (blynkPinMask & (1 << 5)) { url += "&v5=" + fmtBlynkVal(batV, 1); added++; }
+    if (blynkPinMask & (1 << 6)) { url += "&v6=" + fmtBlynkVal(gridV, 1); added++; }
+    if (blynkPinMask & (1 << 7)) { url += "&v7=" + fmtBlynkVal(temp, 1); added++; }
 
     if (blynkPinMask & (1 << 8)) {
         String encMode = telemetry.mode_string;
@@ -748,10 +755,10 @@ void sendBlynkTelemetry() {
     }
 
     if (bms.connected && bms.data_valid) {
-        if (blynkPinMask & (1 << 9)) { url += "&v9=" + String(bms.delta_mv, 1); added++; }
-        if (blynkPinMask & (1 << 10)) { url += "&v10=" + String(bms.max_cell_v, 3); added++; }
-        if (blynkPinMask & (1 << 11)) { url += "&v11=" + String(bms.min_cell_v, 3); added++; }
-        if (blynkPinMask & (1 << 12)) { url += "&v12=" + String(bms.temp_mos, 1); added++; }
+        if (blynkPinMask & (1 << 9)) { url += "&v9=" + fmtBlynkVal(bms.delta_mv, 1); added++; }
+        if (blynkPinMask & (1 << 10)) { url += "&v10=" + fmtBlynkVal(bms.max_cell_v, 3); added++; }
+        if (blynkPinMask & (1 << 11)) { url += "&v11=" + fmtBlynkVal(bms.min_cell_v, 3); added++; }
+        if (blynkPinMask & (1 << 12)) { url += "&v12=" + fmtBlynkVal(bms.temp_mos, 1); added++; }
     }
 
     if (added == 0) return;
