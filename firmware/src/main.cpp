@@ -13,7 +13,7 @@
 #include "inverter_diagnostics_page.h"
 #include "jk_bms_ble.h"
 
-#define FIRMWARE_VERSION "1.3.0"
+#define FIRMWARE_VERSION "1.3.1"
 
 // Hardware Serial 2 Pins for Inverter RS-232
 #define INVERTER_RX_PIN 16
@@ -51,6 +51,8 @@ String blynkToken = "";
 int blynkInterval = 10; // Default 10 seconds
 String blynkLastStatus = "Ready";
 unsigned long lastBlynkSendTime = 0;
+uint32_t blynkPinMask = 0; // Auto-discovered active datastreams mask
+unsigned long lastBlynkProbeTime = 0;
 
 void initSerial2(int baud, int rxPin, int txPin) {
     Serial2.end();
@@ -652,9 +654,57 @@ void handleTbConfigPost() {
 // -------------------------------------------------------------
 // Blynk IoT Cloud Telemetry & Handlers
 // -------------------------------------------------------------
+void probeBlynkPins() {
+    if (!blynkEnabled || blynkToken.length() == 0 || WiFi.status() != WL_CONNECTED) return;
+    String serverUrl = blynkServer;
+    serverUrl.trim();
+    if (!serverUrl.startsWith("http://") && !serverUrl.startsWith("https://")) {
+        serverUrl = "https://" + serverUrl;
+    }
+    if (serverUrl.endsWith("/")) serverUrl = serverUrl.substring(0, serverUrl.length() - 1);
+
+    String url = serverUrl + "/external/api/get?token=" + blynkToken + "&v0&v1&v2&v3&v4&v5&v6&v7&v8&v9&v10&v11&v12";
+    HTTPClient http;
+    WiFiClientSecure secClient;
+    WiFiClient plainClient;
+    bool beginOk = false;
+    if (url.startsWith("https://")) {
+        secClient.setInsecure();
+        beginOk = http.begin(secClient, url);
+    } else {
+        beginOk = http.begin(plainClient, url);
+    }
+
+    if (beginOk) {
+        http.setTimeout(4000);
+        int httpCode = http.GET();
+        if (httpCode == 200) {
+            String resp = http.getString();
+            uint32_t mask = 0;
+            for (int i = 0; i <= 12; i++) {
+                if (resp.indexOf("\"v" + String(i) + "\"") >= 0) {
+                    mask |= (1 << i);
+                }
+            }
+            if (mask > 0) {
+                blynkPinMask = mask;
+                Serial.printf("[Blynk IoT] Active datastreams auto-discovered: 0x%X\n", blynkPinMask);
+            }
+        }
+        http.end();
+    }
+}
+
 void sendBlynkTelemetry() {
     if (!blynkEnabled || blynkToken.length() == 0 || WiFi.status() != WL_CONNECTED) return;
     if (!telemetry.valid) return;
+
+    // Periodically re-probe pins every 5 minutes or if mask is 0
+    if (blynkPinMask == 0 || millis() - lastBlynkProbeTime >= 300000) {
+        lastBlynkProbeTime = millis();
+        probeBlynkPins();
+    }
+    if (blynkPinMask == 0) blynkPinMask = 0x0F; // Fallback to v0-v3
 
     float pvWatts = telemetry.pv_watts;
     int loadWatts = telemetry.ac_output_watts;
@@ -678,29 +728,33 @@ void sendBlynkTelemetry() {
     }
     if (serverUrl.endsWith("/")) serverUrl = serverUrl.substring(0, serverUrl.length() - 1);
 
-    // Blynk HTTPS Batch Update:
-    // https://blynk.cloud/external/api/batch/update?token={token}&v0=...&v1=...
     String url = serverUrl + "/external/api/batch/update?token=" + blynkToken;
-    url += "&v0=" + String(pvWatts, 0);
-    url += "&v1=" + String(loadWatts);
-    url += "&v2=" + String(gridWatts, 0);
-    url += "&v3=" + String(batPwrWatts, 0);
-    url += "&v4=" + String(batSoc);
-    url += "&v5=" + String(batV, 1);
-    url += "&v6=" + String(gridV, 1);
-    url += "&v7=" + String(temp, 1);
+    int added = 0;
+    if (blynkPinMask & (1 << 0)) { url += "&v0=" + String(pvWatts, 0); added++; }
+    if (blynkPinMask & (1 << 1)) { url += "&v1=" + String(loadWatts); added++; }
+    if (blynkPinMask & (1 << 2)) { url += "&v2=" + String(gridWatts, 0); added++; }
+    if (blynkPinMask & (1 << 3)) { url += "&v3=" + String(batPwrWatts, 0); added++; }
+    if (blynkPinMask & (1 << 4)) { url += "&v4=" + String(batSoc); added++; }
+    if (blynkPinMask & (1 << 5)) { url += "&v5=" + String(batV, 1); added++; }
+    if (blynkPinMask & (1 << 6)) { url += "&v6=" + String(gridV, 1); added++; }
+    if (blynkPinMask & (1 << 7)) { url += "&v7=" + String(temp, 1); added++; }
 
-    String encMode = telemetry.mode_string;
-    encMode.replace(" ", "%20");
-    encMode.replace("/", "%2F");
-    url += "&v8=" + encMode;
+    if (blynkPinMask & (1 << 8)) {
+        String encMode = telemetry.mode_string;
+        encMode.replace(" ", "%20");
+        encMode.replace("/", "%2F");
+        url += "&v8=" + encMode;
+        added++;
+    }
 
     if (bms.connected && bms.data_valid) {
-        url += "&v9=" + String(bms.delta_mv, 1);
-        url += "&v10=" + String(bms.max_cell_v, 3);
-        url += "&v11=" + String(bms.min_cell_v, 3);
-        url += "&v12=" + String(bms.temp_mos, 1);
+        if (blynkPinMask & (1 << 9)) { url += "&v9=" + String(bms.delta_mv, 1); added++; }
+        if (blynkPinMask & (1 << 10)) { url += "&v10=" + String(bms.max_cell_v, 3); added++; }
+        if (blynkPinMask & (1 << 11)) { url += "&v11=" + String(bms.min_cell_v, 3); added++; }
+        if (blynkPinMask & (1 << 12)) { url += "&v12=" + String(bms.temp_mos, 1); added++; }
     }
+
+    if (added == 0) return;
 
     HTTPClient http;
     bool beginOk = false;
@@ -719,7 +773,7 @@ void sendBlynkTelemetry() {
         int httpCode = http.GET();
         if (httpCode == HTTP_CODE_OK || httpCode == 200) {
             blynkLastStatus = "Sent OK (HTTP 200)";
-            Serial.println("[Blynk IoT] Sent batch telemetry -> HTTP 200 OK");
+            Serial.printf("[Blynk IoT] Sent batch telemetry (%d pins) -> HTTP 200 OK\n", added);
         } else {
             blynkLastStatus = "HTTP " + String(httpCode);
             Serial.printf("[Blynk IoT] HTTP Response: %d\n", httpCode);
@@ -764,6 +818,8 @@ void handleBlynkConfigPost() {
     preferences.putString("token", blynkToken);
     preferences.putInt("interval", blynkInterval);
     preferences.end();
+
+    blynkPinMask = 0; // Trigger fresh probe of active pins on next cycle
 
     server.send(200, "text/plain", "Blynk settings saved!");
     Serial.printf("[Blynk IoT] Saved: Enabled=%s, Server=%s, Interval=%ds\n",
