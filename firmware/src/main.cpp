@@ -1377,6 +1377,10 @@ void setup() {
                 Update.printError(Serial);
                 isOtaUpdating = false;
             }
+        } else if (upload.status == UPLOAD_FILE_ABORTED) {
+            Update.abort();
+            isOtaUpdating = false;
+            Serial.println("[Web OTA] Upload aborted.");
         }
     });
 
