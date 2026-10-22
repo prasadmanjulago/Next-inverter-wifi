@@ -1,5 +1,5 @@
 {
-  "version": "1.5.2",
-  "bin_url": "https://raw.githubusercontent.com/prasadmanjulago/Next-inverter-wifi/a24ae5c/firmware.bin",
-  "notes": "v1.5.2: Rock-solid Wi-Fi recovery. Extended initial association timeout to 20s for weak RSSI signals, universal background reconnection watchdog in main loop, and automatic disabling of setup AP once home Wi-Fi connects."
+  "version": "1.5.3",
+  "bin_url": "https://raw.githubusercontent.com/prasadmanjulago/Next-inverter-wifi/cd63722/firmware.bin",
+  "notes": "v1.5.3: Web server unblocking & memory optimization. Removed blocking GitHub TLS check from boot setup, scoped TLS client to prevent continuous heap fragmentation during plain HTTP telemetry, tuned default cloud interval to 15s, and yielded CPU to lwIP network stack."
 }
