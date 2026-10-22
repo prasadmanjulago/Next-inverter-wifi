@@ -171,8 +171,8 @@ public:
         Serial.println("[JK-BMS] Starting BLE Scan for nearby BMS devices...");
         NimBLEScan* pScan = NimBLEDevice::getScan();
         pScan->setActiveScan(true);
-        pScan->setInterval(100);
-        pScan->setWindow(99);
+        pScan->setInterval(160);
+        pScan->setWindow(40); // Balanced duty cycle prevents starving 2.4GHz Wi-Fi radio
 
         NimBLEScanResults results = pScan->start(durationSec, false);
         for (int i = 0; i < results.getCount(); i++) {

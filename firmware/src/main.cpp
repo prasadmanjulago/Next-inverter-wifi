@@ -13,7 +13,7 @@
 #include "inverter_diagnostics_page.h"
 #include "jk_bms_ble.h"
 
-#define FIRMWARE_VERSION "1.5.0"
+#define FIRMWARE_VERSION "1.5.1"
 
 // Hardware Serial 2 Pins for Inverter RS-232
 #define INVERTER_RX_PIN 16
@@ -1026,10 +1026,10 @@ void setup() {
     // Initialize Inverter Serial2
     initSerial2(INVERTER_BAUD, INVERTER_RX_PIN, INVERTER_TX_PIN);
 
-    // Read stored Wi-Fi credentials (configured via Web portal /wifi)
+    // Read stored Wi-Fi credentials
     preferences.begin("wifi", false);
-    String ssid = preferences.getString("ssid", "");
-    String pass = preferences.getString("password", "");
+    String ssid = preferences.getString("ssid", "Easytech Solutions");
+    String pass = preferences.getString("password", "ilen6039");
     preferences.end();
 
     // Read stored GitHub repository
@@ -1037,20 +1037,22 @@ void setup() {
     githubRepo = preferences.getString("repo", "prasadmanjulago/Next-inverter-wifi");
     preferences.end();
 
-    // Read stored ThingsBoard preferences (configured via Web modal /api/tb_config)
+    // Read stored ThingsBoard preferences
     preferences.begin("tb", false);
-    tbEnabled = preferences.getBool("enabled", false);
-    tbServer = preferences.getString("server", "");
-    tbToken = preferences.getString("token", "");
-    tbInterval = preferences.getInt("interval", 60);
-    if (tbInterval < 5) tbInterval = 60;
+    tbEnabled = preferences.getBool("enabled", true);
+    tbServer = preferences.getString("server", "http://161.118.190.164:8080");
+    tbToken = preferences.getString("token", "hRIwZ2yNvOPsitjsjOtD");
+    tbInterval = preferences.getInt("interval", 5);
+    if (tbInterval < 5) tbInterval = 5;
     preferences.end();
-
 
     bool connected = false;
     if (ssid.length() > 0) {
         Serial.printf("[Wi-Fi] Connecting to '%s'...\n", ssid.c_str());
         WiFi.mode(WIFI_STA);
+        WiFi.setSleep(false);        // Disable power saving modem sleep (prevents high latency & drops)
+        WiFi.setAutoReconnect(true); // Enable IDF low-level auto reconnection
+        WiFi.persistent(true);
         WiFi.begin(ssid.c_str(), pass.c_str());
         
         unsigned long t0 = millis();
@@ -1183,6 +1185,16 @@ void loop() {
         sendThingsBoardTelemetry();
     }
 
+
+    // Wi-Fi Connection Supervisor & Auto-Reconnect Watchdog
+    if (!isApModeActive && WiFi.status() != WL_CONNECTED) {
+        static unsigned long lastWifiRetry = 0;
+        if (millis() - lastWifiRetry >= 8000) {
+            lastWifiRetry = millis();
+            Serial.println("[Wi-Fi Watchdog] Disconnected! Attempting auto-reconnect...");
+            WiFi.reconnect();
+        }
+    }
 
     // Periodic OTA check every 1 hour
     if (millis() - lastOtaCheckTime >= OTA_CHECK_INTERVAL) {
