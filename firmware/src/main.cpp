@@ -1026,6 +1026,9 @@ void setup() {
     // Initialize Inverter Serial2
     initSerial2(INVERTER_BAUD, INVERTER_RX_PIN, INVERTER_TX_PIN);
 
+    // Initialize JK-BMS BLE before Wi-Fi so ESP32 RF Coexistence layer binds cleanly
+    JkBmsManager::getInstance().init();
+
     // Read stored Wi-Fi credentials
     preferences.begin("wifi", false);
     String ssid = preferences.getString("ssid", "Easytech Solutions");
@@ -1155,9 +1158,6 @@ void setup() {
 
     server.begin();
     Serial.println("[Web Server] Active on port 80 (Web OTA endpoint: /update)");
-
-    // Initialize JK-BMS BLE
-    JkBmsManager::getInstance().init();
 }
 
 void loop() {
