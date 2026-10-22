@@ -1,5 +1,5 @@
 {
-  "version": "1.5.1",
-  "bin_url": "https://raw.githubusercontent.com/prasadmanjulago/Next-inverter-wifi/b966bda/firmware.bin",
-  "notes": "v1.5.1: Critical Wi-Fi stability fix. Added automatic Wi-Fi watchdog in main loop, disabled modem sleep (WiFi.setSleep(false)) to eliminate dropped packets, balanced BLE scan duty cycle to prevent RF radio starvation, increased ThingsBoard HTTP timeout to 8s, and restored persistent network recovery."
+  "version": "1.5.2",
+  "bin_url": "https://raw.githubusercontent.com/prasadmanjulago/Next-inverter-wifi/a24ae5c/firmware.bin",
+  "notes": "v1.5.2: Rock-solid Wi-Fi recovery. Extended initial association timeout to 20s for weak RSSI signals, universal background reconnection watchdog in main loop, and automatic disabling of setup AP once home Wi-Fi connects."
 }
