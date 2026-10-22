@@ -13,7 +13,7 @@
 #include "inverter_diagnostics_page.h"
 #include "jk_bms_ble.h"
 
-#define FIRMWARE_VERSION "1.5.1"
+#define FIRMWARE_VERSION "1.5.2"
 
 // Hardware Serial 2 Pins for Inverter RS-232
 #define INVERTER_RX_PIN 16
@@ -1056,7 +1056,7 @@ void setup() {
         WiFi.begin(ssid.c_str(), pass.c_str());
         
         unsigned long t0 = millis();
-        while (WiFi.status() != WL_CONNECTED && millis() - t0 < 9000) {
+        while (WiFi.status() != WL_CONNECTED && millis() - t0 < 20000) {
             delay(300);
             Serial.print(".");
         }
@@ -1187,13 +1187,19 @@ void loop() {
 
 
     // Wi-Fi Connection Supervisor & Auto-Reconnect Watchdog
-    if (!isApModeActive && WiFi.status() != WL_CONNECTED) {
+    if (WiFi.status() != WL_CONNECTED) {
         static unsigned long lastWifiRetry = 0;
-        if (millis() - lastWifiRetry >= 8000) {
+        if (millis() - lastWifiRetry >= 10000) {
             lastWifiRetry = millis();
             Serial.println("[Wi-Fi Watchdog] Disconnected! Attempting auto-reconnect...");
             WiFi.reconnect();
         }
+    } else if (isApModeActive) {
+        // Successfully connected to Home Wi-Fi! Turn off fallback AP mode
+        isApModeActive = false;
+        WiFi.softAPdisconnect(true);
+        WiFi.mode(WIFI_STA);
+        Serial.println("[Wi-Fi] Home network joined. Fallback AP disabled.");
     }
 
     // Periodic OTA check every 1 hour
