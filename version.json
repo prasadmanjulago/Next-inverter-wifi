@@ -1,5 +1,5 @@
 {
   "version": "1.5.3",
-  "bin_url": "https://raw.githubusercontent.com/prasadmanjulago/Next-inverter-wifi/cd63722/firmware.bin",
-  "notes": "v1.5.3: Web server unblocking & memory optimization. Removed blocking GitHub TLS check from boot setup, scoped TLS client to prevent continuous heap fragmentation during plain HTTP telemetry, tuned default cloud interval to 15s, and yielded CPU to lwIP network stack."
+  "bin_url": "https://raw.githubusercontent.com/prasadmanjulago/Next-inverter-wifi/0f190a4/firmware.bin",
+  "notes": "v1.5.3: Power stability & web server unblocking. Restored stable modem power management to prevent 3.3V voltage sag, tuned BLE power to +3dBm, removed blocking TLS checks from setup, and scoped client allocations to eliminate heap fragmentation."
 }
