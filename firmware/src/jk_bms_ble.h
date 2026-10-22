@@ -92,7 +92,7 @@ public:
         prefs.end();
 
         NimBLEDevice::init("NextInverter-BLE");
-        NimBLEDevice::setPower(ESP_PWR_LVL_P9);
+        NimBLEDevice::setPower(ESP_PWR_LVL_P3); // +3dBm prevents 3.3V power dips/brownouts while easily covering inverter-to-battery range
         NimBLEDevice::setMTU(517);
         NimBLEDevice::setSecurityAuth(false, false, false);
 

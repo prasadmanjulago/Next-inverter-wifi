@@ -1050,9 +1050,7 @@ void setup() {
     if (ssid.length() > 0) {
         Serial.printf("[Wi-Fi] Connecting to '%s'...\n", ssid.c_str());
         WiFi.mode(WIFI_STA);
-        WiFi.setSleep(false);        // Disable power saving modem sleep (prevents high latency & drops)
         WiFi.setAutoReconnect(true); // Enable IDF low-level auto reconnection
-        WiFi.persistent(true);
         WiFi.begin(ssid.c_str(), pass.c_str());
         
         unsigned long t0 = millis();
