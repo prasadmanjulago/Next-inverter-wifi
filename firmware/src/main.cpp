@@ -566,7 +566,7 @@ void sendThingsBoardTelemetry() {
 
     if (beginOk) {
         http.addHeader("Content-Type", "application/json");
-        http.setTimeout(4000);
+        http.setTimeout(8000);
         int httpCode = http.POST(payload);
         if (httpCode == HTTP_CODE_OK || httpCode == 200) {
             tbLastStatus = "Sent OK (" + String(n) + " avg)";
