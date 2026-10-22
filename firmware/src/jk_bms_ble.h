@@ -203,10 +203,6 @@ public:
         Serial.printf("[JK-BMS] BLE Scan complete. Found %d devices.\n", (int)scanResults.size());
     }
 
-    void loop() {
-        // BLE runs in dedicated FreeRTOS task on Core 0
-    }
-
     // Ultra-fast lock-free ring buffer
     void onNotifyRaw(uint16_t hdl, const uint8_t* pData, size_t length) {
         if (pData == nullptr || length == 0) return;
@@ -243,19 +239,6 @@ public:
         char buf[36];
         snprintf(buf, sizeof(buf), "TX 0x%02X: %s", cmdType, ok ? "OK" : "FAIL");
         data.addLog(String(buf));
-        return ok;
-    }
-
-    bool sendModbusQuery() {
-        if (pWriteChar == nullptr) return false;
-        uint8_t mbFrame[21] = {
-            0x4E, 0x57, 0x00, 0x13, 0x00, 0x00, 0x00, 0x00,
-            0x06, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x68, 0x00, 0x00, 0x01, 0x29
-        };
-        data.tx_cmd_count++;
-        bool ok = pWriteChar->writeValue(mbFrame, sizeof(mbFrame), false);
-        data.addLog("TX Modbus (0x06): " + String(ok ? "OK" : "FAIL"));
         return ok;
     }
 

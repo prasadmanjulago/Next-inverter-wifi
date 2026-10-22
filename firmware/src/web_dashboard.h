@@ -1829,7 +1829,9 @@ const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
     <div style="margin-top:4px; display:flex; justify-content:space-between; align-items:center;">
       <label style="font-size:0.72rem; color:#475569;">Update Interval:</label>
       <select id="blynkInterval" style="width:160px; padding:6px; font-size:0.75rem;">
-        <option value="10" selected>10s (Fast)</option>
+        <option value="3" selected>3s (Real-time)</option>
+        <option value="5">5s (Ultra Fast)</option>
+        <option value="10">10s (Fast)</option>
         <option value="15">15s (Balanced)</option>
         <option value="30">30s (Eco)</option>
         <option value="60">60s (1 min)</option>

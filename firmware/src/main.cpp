@@ -13,7 +13,7 @@
 #include "inverter_diagnostics_page.h"
 #include "jk_bms_ble.h"
 
-#define FIRMWARE_VERSION "1.3.2"
+#define FIRMWARE_VERSION "1.4.0"
 
 // Hardware Serial 2 Pins for Inverter RS-232
 #define INVERTER_RX_PIN 16
@@ -48,7 +48,7 @@ unsigned long lastTbSendTime = 0;
 bool blynkEnabled = false;
 String blynkServer = "https://blynk.cloud";
 String blynkToken = "";
-int blynkInterval = 10; // Default 10 seconds
+int blynkInterval = 3; // Default 3 seconds (Real-time)
 String blynkLastStatus = "Ready";
 unsigned long lastBlynkSendTime = 0;
 uint32_t blynkPinMask = 0; // Auto-discovered active datastreams mask
@@ -386,30 +386,11 @@ void handleSendCmd() {
     server.send(200, "text/plain", resp);
 }
 
-void handleSetPriority() {
-    if (!server.hasArg("val")) {
-        server.send(400, "text/plain", "Missing val parameter");
-        return;
-    }
-    String val = server.arg("val");
-    const char *cmd = "";
-    if (val == "USB") cmd = "POP00";
-    else if (val == "SUB") cmd = "POP01";
-    else if (val == "SBU") cmd = "POP02";
-    else {
-        server.send(400, "text/plain", "Invalid priority. Use USB, SUB, or SBU.");
-        return;
-    }
-
-    Serial.printf("[Inverter] Output Priority Command: %s\n", cmd);
-    VoltronicProtocol::sendCommand(Serial2, cmd);
-    server.send(200, "text/plain", "Sent " + String(cmd) + " to Inverter!");
-}
-
-void drainSerial2(unsigned long quietMs = 120, unsigned long maxWaitMs = 1200) {
+void drainSerial2(unsigned long quietMs = 25, unsigned long maxWaitMs = 250) {
     unsigned long start = millis();
     unsigned long lastByte = millis();
     while (millis() - start < maxWaitMs) {
+        server.handleClient();
         if (Serial2.available()) {
             Serial2.read();
             lastByte = millis();
@@ -423,15 +404,17 @@ void drainSerial2(unsigned long quietMs = 120, unsigned long maxWaitMs = 1200) {
 }
 
 String queryInverter(const char *cmd, unsigned long timeoutMs) {
-    // 1. Drain serial line until it has been quiet for at least 100ms
-    drainSerial2(100, 1000);
+    // 1. Drain serial line until quiet (quick 25ms silence check)
+    drainSerial2(25, 250);
 
     telemetry.last_tx_cmd = String(cmd);
     VoltronicProtocol::sendCommand(Serial2, cmd);
     telemetry.tx_byte_count += strlen(cmd) + 3;
 
     String resp = "";
+    resp.reserve(128);
     String hexDump = "";
+    hexDump.reserve(320);
     bool foundStart = false;
     unsigned long start = millis();
 
@@ -502,7 +485,9 @@ void pollInverter() {
         if (qmodResp.length() > 0 && qmodResp.indexOf('(') >= 0) {
             VoltronicProtocol::parseQMOD(qmodResp, telemetry);
         }
-        tbAccumulator.add(telemetry); // Accumulate sample after both QPIGS & QMOD are updated
+        if (tbEnabled) {
+            tbAccumulator.add(telemetry); // Accumulate sample only when ThingsBoard is enabled
+        }
     }
 }
 
@@ -676,7 +661,7 @@ void probeBlynkPins() {
     }
 
     if (beginOk) {
-        http.setTimeout(4000);
+        http.setTimeout(2500);
         int httpCode = http.GET();
         if (httpCode == 200) {
             String resp = http.getString();
@@ -776,7 +761,7 @@ void sendBlynkTelemetry() {
     }
 
     if (beginOk) {
-        http.setTimeout(4000);
+        http.setTimeout(2500);
         int httpCode = http.GET();
         if (httpCode == HTTP_CODE_OK || httpCode == 200) {
             blynkLastStatus = "Sent OK (HTTP 200)";
@@ -816,7 +801,7 @@ void handleBlynkConfigPost() {
     }
     if (server.hasArg("interval")) {
         blynkInterval = server.arg("interval").toInt();
-        if (blynkInterval < 5) blynkInterval = 10;
+        if (blynkInterval < 1) blynkInterval = 3;
     }
 
     preferences.begin("blynk", false);
@@ -969,25 +954,19 @@ void handleSettingsPage() {
 void handleGetInverterSettings() {
     isMacroExecuting = true;
     lastPollTime = millis() + 10000;
-    drainSerial2(150, 1500);
+    drainSerial2(30, 250);
 
-    String qpiri = queryInverter("QPIRI", 1500);
+    String qpiri = queryInverter("QPIRI", 800);
     if (qpiri.length() < 10) {
-        delay(250);
-        drainSerial2(100, 500);
-        qpiri = queryInverter("QPIRI", 1500);
+        drainSerial2(25, 200);
+        qpiri = queryInverter("QPIRI", 800);
     }
-    delay(100);
-    drainSerial2(100, 500);
-    String qflag = queryInverter("QFLAG", 1500);
+    drainSerial2(25, 200);
+    String qflag = queryInverter("QFLAG", 800);
     if (qflag.length() < 5) {
-        delay(250);
-        drainSerial2(100, 500);
-        qflag = queryInverter("QFLAG", 1500);
+        drainSerial2(25, 200);
+        qflag = queryInverter("QFLAG", 800);
     }
-    delay(100);
-    drainSerial2(100, 500);
-    String qmod = queryInverter("QMOD", 1000);
 
     isMacroExecuting = false;
     lastPollTime = millis();
@@ -1014,10 +993,9 @@ void handleGetInverterSettings() {
     
     String cleanQpiri = qpiri; cleanQpiri.replace("\"", "\\\""); cleanQpiri.replace("\r", ""); cleanQpiri.replace("\n", "");
     String cleanQflag = qflag; cleanQflag.replace("\"", "\\\""); cleanQflag.replace("\r", ""); cleanQflag.replace("\n", "");
-    String cleanQmod = qmod; cleanQmod.replace("\"", "\\\""); cleanQmod.replace("\r", ""); cleanQmod.replace("\n", "");
     json += "\"raw_qpiri\":\"" + cleanQpiri + "\",";
     json += "\"raw_qflag\":\"" + cleanQflag + "\",";
-    json += "\"raw_qmod\":\"" + cleanQmod + "\",";
+    json += "\"raw_qmod\":\"(" + String(telemetry.mode_char) + "\",";
     json += "\"mode\":\"" + telemetry.mode_string + "\",";
 
     json += "\"settings\":{";
@@ -1268,8 +1246,8 @@ void setup() {
     blynkEnabled = preferences.getBool("enabled", false);
     blynkServer = preferences.getString("server", "https://blynk.cloud");
     blynkToken = preferences.getString("token", "");
-    blynkInterval = preferences.getInt("interval", 10);
-    if (blynkInterval < 5) blynkInterval = 10;
+    blynkInterval = preferences.getInt("interval", 3);
+    if (blynkInterval < 1) blynkInterval = 3;
     preferences.end();
 
     bool connected = false;
@@ -1312,7 +1290,6 @@ void setup() {
     server.on("/wifi", handleWifiPage);
     server.on("/wifi_save", HTTP_POST, handleWifiSave);
     server.on("/api/telemetry", handleTelemetryApi);
-    server.on("/api/set_priority", handleSetPriority);
     server.on("/api/wifi_scan", handleWifiScan);
     server.on("/api/check_update", handleCheckUpdate);
     server.on("/api/do_github_update", HTTP_POST, handleDoGithubUpdate);
@@ -1399,9 +1376,6 @@ void loop() {
         delay(1);
         return;
     }
-
-    // Background BLE state machine for JK-BMS
-    JkBmsManager::getInstance().loop();
 
     if (!isMacroExecuting && millis() - lastPollTime >= POLL_INTERVAL) {
         lastPollTime = millis();
