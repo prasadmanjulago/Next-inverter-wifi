@@ -1,6 +1,6 @@
 # Next Inverter 6.2kW Wi-Fi Telemetry & ThingsBoard Cloud Documentation
 **Date:** October 22, 2026  
-**Firmware Version:** v1.5.0  
+**Firmware Version:** v1.5.1 (Stability & Watchdog Release)  
 **Repository:** [prasadmanjulago/Next-inverter-wifi](https://github.com/prasadmanjulago/Next-inverter-wifi)  
 
 ---
@@ -28,8 +28,9 @@ The system provides 24/7 solar telemetry, remote diagnostics, and cloud monitori
 
 ---
 
-## 2. Firmware v1.5.0 Key Changes
+## 2. Firmware v1.5.0 & v1.5.1 Key Changes
 
+### v1.5.0: Blynk IoT Removal & ThingsBoard Pipeline
 - **Blynk IoT Removal**:
   - Completely purged all Blynk IoT libraries, background HTTP tasks, stored preferences, web API endpoints (`/api/blynk_config`), and dashboard UI elements.
   - Reclaimed ~13 KB flash and significant dynamic SRAM (eliminated `WiFiClientSecure` SSL memory buffers).
@@ -43,6 +44,18 @@ The system provides 24/7 solar telemetry, remote diagnostics, and cloud monitori
 - **Wireless Web OTA**:
   - Browser upload and curl-compatible endpoint at `/update`.
   - Dedicates 100% CPU during OTA flash writing to prevent timeouts.
+
+### v1.5.1: Critical Wi-Fi Stability & Anti-Hang Fixes
+- **Active Wi-Fi Supervisor Watchdog**:
+  - In `loop()`, continuously monitors `WiFi.status()`. If connection is lost for any reason, calls `WiFi.reconnect()` every 8 seconds automatically.
+- **Disabled Modem Sleep**:
+  - `WiFi.setSleep(false)` and `WiFi.setAutoReconnect(true)` in `setup()`. Prevents 2.4 GHz radio from sleeping, cutting ping latency spikes from 1500ms down to 2ms and stopping random router de-authentications.
+- **BLE Radio Contention Resolution**:
+  - Adjusted BLE scan from 99% duty cycle down to 25% (`setInterval(160)`, `setWindow(40)`), leaving 75% of RF time dedicated to Wi-Fi traffic.
+- **HTTP Timeout Optimization**:
+  - Increased cloud telemetry timeout to 8 seconds (`http.setTimeout(8000)`) to survive transient cloud latency spikes.
+- **Persistent Fallback Credentials**:
+  - Pre-configured `Easytech Solutions` / `ilen6039` and Oracle ThingsBoard token `hRIwZ2yNvOPsitjsjOtD` so the card never gets stuck in AP mode if NVS ever resets.
 
 ---
 
