@@ -1,6 +1,6 @@
 # Next Inverter 6.2kW Wi-Fi Telemetry & ThingsBoard Cloud Documentation
 **Date:** October 22, 2026  
-**Firmware Version:** v1.5.1 (Stability & Watchdog Release)  
+**Firmware Version:** v1.5.2 (Universal Wi-Fi Auto-Recovery Release)  
 **Repository:** [prasadmanjulago/Next-inverter-wifi](https://github.com/prasadmanjulago/Next-inverter-wifi)  
 
 ---
