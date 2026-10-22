@@ -13,7 +13,7 @@
 #include "inverter_diagnostics_page.h"
 #include "jk_bms_ble.h"
 
-#define FIRMWARE_VERSION "1.5.2"
+#define FIRMWARE_VERSION "1.5.3"
 
 // Hardware Serial 2 Pins for Inverter RS-232
 #define INVERTER_RX_PIN 16
@@ -554,10 +554,10 @@ void sendThingsBoardTelemetry() {
 
     HTTPClient http;
     bool beginOk = false;
-    WiFiClientSecure secClient;
     WiFiClient plainClient;
 
     if (url.startsWith("https://")) {
+        WiFiClientSecure secClient;
         secClient.setInsecure();
         beginOk = http.begin(secClient, url);
     } else {
@@ -1042,8 +1042,8 @@ void setup() {
     tbEnabled = preferences.getBool("enabled", true);
     tbServer = preferences.getString("server", "http://161.118.190.164:8080");
     tbToken = preferences.getString("token", "hRIwZ2yNvOPsitjsjOtD");
-    tbInterval = preferences.getInt("interval", 5);
-    if (tbInterval < 5) tbInterval = 5;
+    tbInterval = preferences.getInt("interval", 15);
+    if (tbInterval < 5) tbInterval = 15;
     preferences.end();
 
     bool connected = false;
@@ -1066,9 +1066,6 @@ void setup() {
             isApModeActive = false;
             Serial.println("\n[Wi-Fi] Connected to network successfully!");
             Serial.printf("[Wi-Fi] IP Address: http://%s\n", WiFi.localIP().toString().c_str());
-            
-            // Check for updates on startup
-            checkGitHubUpdate();
         } else {
             Serial.println("\n[Wi-Fi] Network not found or failed to connect.");
         }
@@ -1207,4 +1204,6 @@ void loop() {
         lastOtaCheckTime = millis();
         checkGitHubUpdate();
     }
+
+    delay(2); // Yield CPU to FreeRTOS background lwIP networking tasks
 }
