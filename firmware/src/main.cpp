@@ -1026,10 +1026,10 @@ void setup() {
     // Initialize Inverter Serial2
     initSerial2(INVERTER_BAUD, INVERTER_RX_PIN, INVERTER_TX_PIN);
 
-    // Read stored Wi-Fi credentials
+    // Read stored Wi-Fi credentials (configured via Web portal /wifi)
     preferences.begin("wifi", false);
-    String ssid = preferences.getString("ssid", "Easytech Solutions");
-    String pass = preferences.getString("password", "ilen6039");
+    String ssid = preferences.getString("ssid", "");
+    String pass = preferences.getString("password", "");
     preferences.end();
 
     // Read stored GitHub repository
@@ -1037,11 +1037,11 @@ void setup() {
     githubRepo = preferences.getString("repo", "prasadmanjulago/Next-inverter-wifi");
     preferences.end();
 
-    // Read stored ThingsBoard preferences
+    // Read stored ThingsBoard preferences (configured via Web modal /api/tb_config)
     preferences.begin("tb", false);
     tbEnabled = preferences.getBool("enabled", false);
-    tbServer = preferences.getString("server", "https://eu.thingsboard.cloud");
-    tbToken = preferences.getString("token", "QJJXWvLJZ4GAECdglKb3");
+    tbServer = preferences.getString("server", "");
+    tbToken = preferences.getString("token", "");
     tbInterval = preferences.getInt("interval", 60);
     if (tbInterval < 5) tbInterval = 60;
     preferences.end();
