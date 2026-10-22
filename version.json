@@ -1,5 +1,5 @@
 {
   "version": "1.5.0",
-  "bin_url": "https://raw.githubusercontent.com/prasadmanjulago/Next-inverter-wifi/main/firmware.bin",
+  "bin_url": "https://raw.githubusercontent.com/prasadmanjulago/Next-inverter-wifi/6d889c3/firmware.bin",
   "notes": "v1.5.0: Removed Blynk IoT integration completely. Dedicated ThingsBoard cloud telemetry streaming pipeline, reduced heap memory consumption, lower network contention, enhanced real-time inverter and JK-BMS data updates."
 }
