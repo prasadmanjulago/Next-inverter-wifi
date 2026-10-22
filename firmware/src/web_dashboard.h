@@ -1804,41 +1804,6 @@ const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
 
     <button class="btn-save" style="background:#2563eb; width:100%; margin-top:8px;" onclick="saveTbConfig()">💾 Save ThingsBoard Settings</button>
 
-    <!-- Blynk IoT Cloud Integration Section -->
-    <div class="section-divider"></div>
-    <div class="section-title" style="display:flex; justify-content:space-between; align-items:center;">
-      <span>Blynk IoT Cloud (Phone App)</span>
-      <span id="blynkStatusPill" style="font-size:0.65rem; padding:2px 6px; border-radius:4px; background:#e2e8f0; color:#475569;">Disabled</span>
-    </div>
-
-    <div style="margin-top:6px; display:flex; align-items:center; gap:8px;">
-      <input type="checkbox" id="blynkEnabled" style="width:16px; height:16px; margin:0;">
-      <label for="blynkEnabled" style="font-size:0.75rem; font-weight:600; color:#1e293b; cursor:pointer;">Enable Blynk Cloud Streaming</label>
-    </div>
-
-    <div style="margin-top:6px;">
-      <label style="font-size:0.72rem; color:#475569;">Blynk Server URL:</label>
-      <input type="text" id="blynkServer" placeholder="https://blynk.cloud" value="https://blynk.cloud">
-    </div>
-
-    <div style="margin-top:4px;">
-      <label style="font-size:0.72rem; color:#475569;">Device Auth Token:</label>
-      <input type="text" id="blynkToken" placeholder="Paste Blynk Device Auth Token">
-    </div>
-
-    <div style="margin-top:4px; display:flex; justify-content:space-between; align-items:center;">
-      <label style="font-size:0.72rem; color:#475569;">Update Interval:</label>
-      <select id="blynkInterval" style="width:160px; padding:6px; font-size:0.75rem;">
-        <option value="3" selected>3s (Real-time)</option>
-        <option value="5">5s (Ultra Fast)</option>
-        <option value="10">10s (Fast)</option>
-        <option value="15">15s (Balanced)</option>
-        <option value="30">30s (Eco)</option>
-        <option value="60">60s (1 min)</option>
-      </select>
-    </div>
-
-    <button class="btn-save" style="background:#059669; width:100%; margin-top:8px;" onclick="saveBlynkConfig()">📱 Save Blynk Settings</button>
 
     <!-- GitHub Wireless OTA Section -->
     <div class="section-divider"></div>
@@ -2173,10 +2138,6 @@ async function refreshData() {
       updateTbStatus(d.tb_enabled, d.tb_status);
     }
 
-    // Blynk IoT Status
-    if (d.blynk_enabled !== undefined) {
-      updateBlynkStatus(d.blynk_enabled, d.blynk_status);
-    }
 
     // JK-BMS 14S Bluetooth Telemetry
     if (d.bms) {
@@ -2569,69 +2530,10 @@ async function saveTbConfig() {
   }
 }
 
-function updateBlynkStatus(enabled, status) {
-  const pill = document.getElementById('blynkStatusPill');
-  if (!pill) return;
-  if (!enabled) {
-    pill.style.background = '#e2e8f0';
-    pill.style.color = '#475569';
-    pill.textContent = 'Disabled';
-  } else {
-    pill.style.background = '#dcfce7';
-    pill.style.color = '#15803d';
-    pill.textContent = status || 'Active';
-  }
-}
-
-async function loadBlynkConfig() {
-  try {
-    const res = await fetch('/api/blynk_config');
-    if (res.ok) {
-      const d = await res.json();
-      document.getElementById('blynkEnabled').checked = !!d.enabled;
-      if (d.server) document.getElementById('blynkServer').value = d.server;
-      if (d.token) document.getElementById('blynkToken').value = d.token;
-      if (d.interval) document.getElementById('blynkInterval').value = String(d.interval);
-      updateBlynkStatus(d.enabled, d.last_status);
-    }
-  } catch(e) {}
-}
-
-async function saveBlynkConfig() {
-  const enabled = document.getElementById('blynkEnabled').checked;
-  const server = document.getElementById('blynkServer').value.trim();
-  const token = document.getElementById('blynkToken').value.trim();
-  const interval = document.getElementById('blynkInterval').value;
-  
-  const msg = document.getElementById('modalMsg');
-  msg.style.color = '#059669';
-  msg.textContent = 'Saving Blynk configuration...';
-
-  try {
-    const res = await fetch('/api/blynk_config', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: `enabled=${enabled}&server=${encodeURIComponent(server)}&token=${encodeURIComponent(token)}&interval=${interval}`
-    });
-    if (res.ok) {
-      msg.style.color = '#10b981';
-      msg.textContent = '✅ Blynk settings saved!';
-      updateBlynkStatus(enabled, enabled ? 'Enabled' : 'Disabled');
-    } else {
-      msg.style.color = '#ef4444';
-      msg.textContent = 'Failed to save Blynk settings.';
-    }
-  } catch(e) {
-    msg.style.color = '#ef4444';
-    msg.textContent = 'Network error saving Blynk settings.';
-  }
-}
-
 function openWifiModal() {
   document.getElementById('wifiModal').classList.add('active');
   scanWifiNetworks();
   loadTbConfig();
-  loadBlynkConfig();
 }
 
 function closeWifiModal() {

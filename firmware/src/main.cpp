@@ -13,7 +13,7 @@
 #include "inverter_diagnostics_page.h"
 #include "jk_bms_ble.h"
 
-#define FIRMWARE_VERSION "1.4.0"
+#define FIRMWARE_VERSION "1.5.0"
 
 // Hardware Serial 2 Pins for Inverter RS-232
 #define INVERTER_RX_PIN 16
@@ -44,15 +44,6 @@ int tbInterval = 60; // Default 60 seconds (Quota-safe)
 String tbLastStatus = "Ready";
 unsigned long lastTbSendTime = 0;
 
-// Blynk IoT Cloud Telemetry State
-bool blynkEnabled = false;
-String blynkServer = "https://blynk.cloud";
-String blynkToken = "";
-int blynkInterval = 3; // Default 3 seconds (Real-time)
-String blynkLastStatus = "Ready";
-unsigned long lastBlynkSendTime = 0;
-uint32_t blynkPinMask = 0; // Auto-discovered active datastreams mask
-unsigned long lastBlynkProbeTime = 0;
 
 void initSerial2(int baud, int rxPin, int txPin) {
     Serial2.end();
@@ -292,11 +283,6 @@ void handleTelemetryApi() {
     json += "\"tb_enabled\":" + String(tbEnabled ? "true" : "false") + ",";
     json += "\"tb_interval\":" + String(tbInterval) + ",";
     json += "\"tb_status\":\"" + tbLastStatus + "\",";
-
-    // Blynk IoT Status
-    json += "\"blynk_enabled\":" + String(blynkEnabled ? "true" : "false") + ",";
-    json += "\"blynk_interval\":" + String(blynkInterval) + ",";
-    json += "\"blynk_status\":\"" + blynkLastStatus + "\",";
 
     // Serial Diagnostics
     json += "\"last_tx_cmd\":\"" + telemetry.last_tx_cmd + "\",";
@@ -636,187 +622,6 @@ void handleTbConfigPost() {
                   tbEnabled ? "YES" : "NO", tbServer.c_str(), tbInterval);
 }
 
-// -------------------------------------------------------------
-// Blynk IoT Cloud Telemetry & Handlers
-// -------------------------------------------------------------
-void probeBlynkPins() {
-    if (!blynkEnabled || blynkToken.length() == 0 || WiFi.status() != WL_CONNECTED) return;
-    String serverUrl = blynkServer;
-    serverUrl.trim();
-    if (!serverUrl.startsWith("http://") && !serverUrl.startsWith("https://")) {
-        serverUrl = "https://" + serverUrl;
-    }
-    if (serverUrl.endsWith("/")) serverUrl = serverUrl.substring(0, serverUrl.length() - 1);
-
-    String url = serverUrl + "/external/api/get?token=" + blynkToken + "&v0&v1&v2&v3&v4&v5&v6&v7&v8&v9&v10&v11&v12";
-    HTTPClient http;
-    WiFiClientSecure secClient;
-    WiFiClient plainClient;
-    bool beginOk = false;
-    if (url.startsWith("https://")) {
-        secClient.setInsecure();
-        beginOk = http.begin(secClient, url);
-    } else {
-        beginOk = http.begin(plainClient, url);
-    }
-
-    if (beginOk) {
-        http.setTimeout(2500);
-        int httpCode = http.GET();
-        if (httpCode == 200) {
-            String resp = http.getString();
-            uint32_t mask = 0;
-            for (int i = 0; i <= 12; i++) {
-                if (resp.indexOf("\"v" + String(i) + "\"") >= 0) {
-                    mask |= (1 << i);
-                }
-            }
-            if (mask > 0) {
-                blynkPinMask = mask;
-                Serial.printf("[Blynk IoT] Active datastreams auto-discovered: 0x%X\n", blynkPinMask);
-            }
-        }
-        http.end();
-    }
-}
-
-static inline String fmtBlynkVal(float val, int dec) {
-    if (dec == 0) return String((long)round(val));
-    String s = String(val, dec);
-    s.trim();
-    return s;
-}
-
-void sendBlynkTelemetry() {
-    if (!blynkEnabled || blynkToken.length() == 0 || WiFi.status() != WL_CONNECTED) return;
-    if (!telemetry.valid) return;
-
-    // Periodically re-probe pins every 5 minutes or if mask is 0
-    if (blynkPinMask == 0 || millis() - lastBlynkProbeTime >= 300000) {
-        lastBlynkProbeTime = millis();
-        probeBlynkPins();
-    }
-    if (blynkPinMask == 0) blynkPinMask = 0x0F; // Fallback to v0-v3
-
-    float pvWatts = telemetry.pv_watts;
-    int loadWatts = telemetry.ac_output_watts;
-    float gridWatts = telemetry.grid_watts;
-    float batPwrWatts = telemetry.battery_power_watts;
-    int batSoc = telemetry.battery_soc;
-    float batV = telemetry.battery_voltage;
-    float gridV = telemetry.grid_voltage;
-    float temp = telemetry.heatsink_temp;
-
-    // JK-BMS precision telemetry if connected
-    const auto& bms = JkBmsManager::getInstance().data;
-    if (bms.connected && bms.data_valid) {
-        batV = bms.pack_voltage;
-    }
-
-    String serverUrl = blynkServer;
-    serverUrl.trim();
-    if (!serverUrl.startsWith("http://") && !serverUrl.startsWith("https://")) {
-        serverUrl = "https://" + serverUrl;
-    }
-    if (serverUrl.endsWith("/")) serverUrl = serverUrl.substring(0, serverUrl.length() - 1);
-
-    String url = serverUrl + "/external/api/batch/update?token=" + blynkToken;
-    int added = 0;
-    if (blynkPinMask & (1 << 0)) { url += "&v0=" + fmtBlynkVal(pvWatts, 0); added++; }
-    if (blynkPinMask & (1 << 1)) { url += "&v1=" + String(loadWatts); added++; }
-    if (blynkPinMask & (1 << 2)) { url += "&v2=" + fmtBlynkVal(gridWatts, 0); added++; }
-    if (blynkPinMask & (1 << 3)) { url += "&v3=" + fmtBlynkVal(batPwrWatts, 0); added++; }
-    if (blynkPinMask & (1 << 4)) { url += "&v4=" + String(batSoc); added++; }
-    if (blynkPinMask & (1 << 5)) { url += "&v5=" + fmtBlynkVal(batV, 1); added++; }
-    if (blynkPinMask & (1 << 6)) { url += "&v6=" + fmtBlynkVal(gridV, 1); added++; }
-    if (blynkPinMask & (1 << 7)) { url += "&v7=" + fmtBlynkVal(temp, 1); added++; }
-
-    if (blynkPinMask & (1 << 8)) {
-        String encMode = telemetry.mode_string;
-        encMode.replace(" ", "%20");
-        encMode.replace("/", "%2F");
-        url += "&v8=" + encMode;
-        added++;
-    }
-
-    if (bms.connected && bms.data_valid) {
-        if (blynkPinMask & (1 << 9)) { url += "&v9=" + fmtBlynkVal(bms.delta_mv, 1); added++; }
-        if (blynkPinMask & (1 << 10)) { url += "&v10=" + fmtBlynkVal(bms.max_cell_v, 3); added++; }
-        if (blynkPinMask & (1 << 11)) { url += "&v11=" + fmtBlynkVal(bms.min_cell_v, 3); added++; }
-        if (blynkPinMask & (1 << 12)) { url += "&v12=" + fmtBlynkVal(bms.temp_mos, 1); added++; }
-    }
-
-    if (added == 0) return;
-
-    HTTPClient http;
-    bool beginOk = false;
-    WiFiClientSecure secClient;
-    WiFiClient plainClient;
-
-    if (url.startsWith("https://")) {
-        secClient.setInsecure();
-        beginOk = http.begin(secClient, url);
-    } else {
-        beginOk = http.begin(plainClient, url);
-    }
-
-    if (beginOk) {
-        http.setTimeout(2500);
-        int httpCode = http.GET();
-        if (httpCode == HTTP_CODE_OK || httpCode == 200) {
-            blynkLastStatus = "Sent OK (HTTP 200)";
-            Serial.printf("[Blynk IoT] Sent batch telemetry (%d pins) -> HTTP 200 OK\n", added);
-        } else {
-            blynkLastStatus = "HTTP " + String(httpCode);
-            Serial.printf("[Blynk IoT] HTTP Response: %d\n", httpCode);
-        }
-        http.end();
-    } else {
-        blynkLastStatus = "Conn Failed";
-        Serial.println("[Blynk IoT] Failed to begin HTTP connection");
-    }
-}
-
-void handleBlynkConfigGet() {
-    String json = "{";
-    json += "\"enabled\":" + String(blynkEnabled ? "true" : "false") + ",";
-    json += "\"server\":\"" + blynkServer + "\",";
-    json += "\"token\":\"" + blynkToken + "\",";
-    json += "\"interval\":" + String(blynkInterval) + ",";
-    json += "\"last_status\":\"" + blynkLastStatus + "\"";
-    json += "}";
-    server.send(200, "application/json", json);
-}
-
-void handleBlynkConfigPost() {
-    if (server.hasArg("enabled")) blynkEnabled = (server.arg("enabled") == "true" || server.arg("enabled") == "1");
-    if (server.hasArg("server")) {
-        blynkServer = server.arg("server");
-        blynkServer.trim();
-        if (blynkServer.length() == 0) blynkServer = "https://blynk.cloud";
-    }
-    if (server.hasArg("token")) {
-        blynkToken = server.arg("token");
-        blynkToken.trim();
-    }
-    if (server.hasArg("interval")) {
-        blynkInterval = server.arg("interval").toInt();
-        if (blynkInterval < 1) blynkInterval = 3;
-    }
-
-    preferences.begin("blynk", false);
-    preferences.putBool("enabled", blynkEnabled);
-    preferences.putString("server", blynkServer);
-    preferences.putString("token", blynkToken);
-    preferences.putInt("interval", blynkInterval);
-    preferences.end();
-
-    blynkPinMask = 0; // Trigger fresh probe of active pins on next cycle
-
-    server.send(200, "text/plain", "Blynk settings saved!");
-    Serial.printf("[Blynk IoT] Saved: Enabled=%s, Server=%s, Interval=%ds\n",
-                  blynkEnabled ? "YES" : "NO", blynkServer.c_str(), blynkInterval);
-}
 
 // -------------------------------------------------------------
 // Inverter Mode Macros Engine & Preset Handlers
@@ -1241,14 +1046,6 @@ void setup() {
     if (tbInterval < 5) tbInterval = 60;
     preferences.end();
 
-    // Read stored Blynk IoT preferences
-    preferences.begin("blynk", false);
-    blynkEnabled = preferences.getBool("enabled", false);
-    blynkServer = preferences.getString("server", "https://blynk.cloud");
-    blynkToken = preferences.getString("token", "");
-    blynkInterval = preferences.getInt("interval", 3);
-    if (blynkInterval < 1) blynkInterval = 3;
-    preferences.end();
 
     bool connected = false;
     if (ssid.length() > 0) {
@@ -1299,8 +1096,6 @@ void setup() {
     server.on("/api/send_cmd", HTTP_POST, handleSendCmd);
     server.on("/api/tb_config", HTTP_GET, handleTbConfigGet);
     server.on("/api/tb_config", HTTP_POST, handleTbConfigPost);
-    server.on("/api/blynk_config", HTTP_GET, handleBlynkConfigGet);
-    server.on("/api/blynk_config", HTTP_POST, handleBlynkConfigPost);
     server.on("/api/macros", HTTP_GET, handleGetMacros);
     server.on("/api/save_macros", HTTP_POST, handleSaveMacrosList);
     server.on("/api/run_macro", HTTP_POST, handleRunMacro);
@@ -1388,11 +1183,6 @@ void loop() {
         sendThingsBoardTelemetry();
     }
 
-    // Blynk IoT Periodic Cloud Telemetry
-    if (blynkEnabled && millis() - lastBlynkSendTime >= (unsigned long)blynkInterval * 1000) {
-        lastBlynkSendTime = millis();
-        sendBlynkTelemetry();
-    }
 
     // Periodic OTA check every 1 hour
     if (millis() - lastOtaCheckTime >= OTA_CHECK_INTERVAL) {
