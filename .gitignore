@@ -1,3 +1,8 @@
-firmware/.pio/
-firmware/.vscode/
-*.zip
+# Keep all development source code, credentials, archives, and schematics local
+*
+
+# Whitelist files to publish on GitHub for OTA updates
+!firmware.bin
+!version.json
+!.gitignore
+!README.md
