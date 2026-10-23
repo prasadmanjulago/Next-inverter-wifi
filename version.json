@@ -1,5 +1,5 @@
 {
   "version": "1.6.2",
-  "bin_url": "https://raw.githubusercontent.com/prasadmanjulago/Next-inverter-wifi/cd170f5/firmware.bin",
+  "bin_url": "https://raw.githubusercontent.com/prasadmanjulago/Next-inverter-wifi/35b1811/firmware.bin",
   "notes": "v1.6.2: Fixed JavaScript syntax on dashboard, verified 100% valid JS execution."
 }
