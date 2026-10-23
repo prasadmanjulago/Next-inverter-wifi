@@ -1,5 +1,5 @@
 {
-  "version": "1.6.1",
-  "bin_url": "https://raw.githubusercontent.com/prasadmanjulago/Next-inverter-wifi/870b65b/firmware.bin",
-  "notes": "v1.6.1: Streamlined firmware for ESP8266 1MB Flash. Removed weather module, compressed web dashboard and diagnostics with GZIP, and optimized BearSSL to enable wireless OTA updates."
+  "version": "1.6.2",
+  "bin_url": "https://raw.githubusercontent.com/prasadmanjulago/Next-inverter-wifi/cd170f5/firmware.bin",
+  "notes": "v1.6.2: Fixed JavaScript syntax on dashboard, verified 100% valid JS execution."
 }
