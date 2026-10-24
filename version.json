@@ -1,5 +1,5 @@
 {
   "version": "1.7.1",
-  "bin_url": "https://raw.githubusercontent.com/prasadmanjulago/Next-inverter-wifi/182ea3c/firmware.bin",
+  "bin_url": "https://raw.githubusercontent.com/prasadmanjulago/Next-inverter-wifi/e1e84b9/firmware.bin",
   "notes": "v1.7.1: Active macro highlighting and live compliance engine comparing inverter QPIRI parameters in real-time."
 }
