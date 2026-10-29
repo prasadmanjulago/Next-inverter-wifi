@@ -1,5 +1,5 @@
 {
-  "version": "1.7.2",
-  "bin_url": "https://raw.githubusercontent.com/prasadmanjulago/Next-inverter-wifi/120f669/firmware.bin",
-  "notes": "v1.7.2: Step-by-step sequential macro execution with live applying & OK animations and rock-solid RS-232 ACK verification."
+  "version": "1.7.4",
+  "bin_url": "https://raw.githubusercontent.com/prasadmanjulago/Next-inverter-wifi/a572499/firmware.bin",
+  "notes": "v1.7.4: Fix Wi-Fi status indicator, correct QPIGS status flags, eliminate timer underflows, and expand serial buffer to 256B."
 }
